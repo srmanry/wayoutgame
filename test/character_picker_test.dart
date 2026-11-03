@@ -8,6 +8,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'widget_test.dart' show openMode;
 
 void main() {
+  testWidgets('every level keeps the whole maze still', (tester) async {
+    await tester.pumpWidget(const ArrowGameApp());
+    await openMode(tester, 'Maze Escape');
+    final board = find.byType(EscapeBoard);
+    final game = tester.widget<EscapeBoard>(board).game;
+    for (final level in [1, 15, 100, 171, 200]) {
+      game.selectLevel(level);
+      await tester.pumpAndSettle();
+      expect(tester.widget<EscapeBoard>(board).overview, isTrue);
+      expect(find.byTooltip('Show full maze'), findsNothing);
+      expect(find.byTooltip('Follow player'), findsNothing);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in [const Size(320, 640), const Size(390, 844)]) {
     testWidgets('choose a character and keep it across levels at $size', (
       tester,

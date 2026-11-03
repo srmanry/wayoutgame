@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 
 import 'config/progress_store.dart';
+import 'widgets/character_art.dart';
 import 'widgets/puzzle_board.dart';
 import 'screens/game_hub_screen.dart';
 export 'screens/arrow_game_screen.dart' show GameScreen;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await ProgressStore.init();
+  await Future.wait([
+    ProgressStore.init(),
+    CharacterArt.load().catchError((Object error) {
+      debugPrint('Character portraits unavailable: $error');
+    }),
+  ]);
   runApp(const ArrowGameApp());
 }
 

@@ -5,10 +5,12 @@ import 'package:flutter/scheduler.dart';
 
 import '../config/game_settings.dart';
 import '../game/puzzle_rules.dart';
+import '../widgets/character_art.dart';
 import '../widgets/critters.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/puzzle_board.dart' show ink, mint;
 import 'maze_escape.dart';
+import 'maze_camera.dart';
 import 'maze_decor.dart';
 import 'maze_gate.dart';
 import 'maze_image_scenery.dart';
@@ -26,6 +28,7 @@ class EscapeBoard extends StatefulWidget {
     this.character = PlayerCharacter.male,
     this.paused = false,
     this.tapToMove = false,
+    this.overview = true,
     this.onEscaped,
     this.onCaught,
   });
@@ -35,6 +38,7 @@ class EscapeBoard extends StatefulWidget {
   final bool paused;
   // Touch controls: tap a room and the runner walks there.
   final bool tapToMove;
+  final bool overview;
   final VoidCallback? onEscaped;
   final VoidCallback? onCaught;
 
@@ -215,6 +219,7 @@ class _EscapeBoardState extends State<EscapeBoard>
           painter: _EscapePainter(
             game,
             widget.character,
+            widget.overview,
             _sceneryImage,
             _sceneCache,
             () => _after,
@@ -240,11 +245,16 @@ extension on _EscapeBoardState {
       (size.width - maze.width * cellWidth) / 2,
       (size.height - maze.rows * cellHeight) / 2,
     );
-    return origin +
-        Offset(
-          (game.runnerAt.dx + .5) * cellWidth,
-          (game.runnerAt.dy + .5) * cellHeight,
-        );
+    Offset at(Offset room) =>
+        origin +
+        Offset((room.dx + .5) * cellWidth, (room.dy + .5) * cellHeight);
+    return MazeCamera.follow(
+      size: size,
+      runner: at(game.runnerAt),
+      hunter: at(game.snakeAt),
+      cell: Size(cellWidth, cellHeight),
+      overview: widget.overview,
+    ).toScreen(at(game.runnerAt));
   }
 }
 
@@ -257,6 +267,7 @@ class _EscapePainter extends CustomPainter {
   _EscapePainter(
     this.game,
     this.character,
+    this.overview,
     this.sceneryImage,
     this.sceneCache,
     this.after,
@@ -265,6 +276,7 @@ class _EscapePainter extends CustomPainter {
 
   final EscapeGame game;
   final PlayerCharacter character;
+  final bool overview;
   final ImageInfo? sceneryImage;
   final MazeSceneCache sceneCache;
   final double Function() after;
@@ -288,6 +300,17 @@ class _EscapePainter extends CustomPainter {
     Offset at(Offset room) =>
         origin +
         Offset((room.dx + .5) * cellWidth, (room.dy + .5) * cellHeight);
+    final camera = MazeCamera.follow(
+      size: size,
+      runner: at(game.runnerAt),
+      hunter: at(game.snakeAt),
+      cell: Size(cellWidth, cellHeight),
+      overview: overview,
+    );
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    canvas.scale(camera.scale);
+    canvas.translate(-camera.origin.dx, -camera.origin.dy);
     sceneCache.draw(canvas, (
       maze,
       size,
@@ -302,9 +325,6 @@ class _EscapePainter extends CustomPainter {
     _drawHint(canvas, at(game.runnerAt), Size(cellWidth, cellHeight));
 
     final t = after();
-    if (maze.hunter == AnimalKind.snake) {
-      _drawSnake(canvas, cell, at);
-    }
     // The exit gate breathes a green ring so the way out is easy to find.
     if (!game.isOver) {
       final (_, exitGate, room) = _gates(size);
@@ -319,23 +339,51 @@ class _EscapePainter extends CustomPainter {
       );
     }
 
-    // Keep the portraits readable in dense later mazes: they may stand a
-    // little larger than a room, on a disc in their role's colour.
-    final portraitRadius = math.max(9.0, math.min(13.0, cell * .42));
+    // Characters share the maze's room scale. The camera enlarges both
+    // together, preserving their relationship to paths and walls.
+    final portraitRadius = cell * .46;
     final hunter = at(game.snakeAt);
-    // Waiting hunters remain fully visible beside left-edge entrance gates.
-    final hunterCenter = Offset(
-      math.max(portraitRadius * 1.2 + 1, hunter.dx),
-      hunter.dy,
-    );
-    _roleDisc(canvas, hunterCenter, portraitRadius, _danger);
-    drawMazeAnimal(
-      canvas,
-      hunterCenter,
-      portraitRadius,
-      maze.hunter,
-      hunter: true,
-    );
+    final hunterCenter = hunter;
+    final caught = game.state == EscapeState.caught;
+    final lunge = caught ? math.sin(math.min(t / .35, 1) * math.pi) : 0.0;
+    final faceRadius = math.max(cell * .62, 11.0);
+    void drawHunter() {
+      if (CharacterArt.drawFace(
+        canvas,
+        // A waiting hunter stays whole beside the left-edge gate.
+        Offset(math.max(faceRadius + 1, hunterCenter.dx), hunterCenter.dy),
+        faceRadius,
+        maze.hunter.name,
+        _danger,
+        flip: game.hunterLookingLeft,
+      )) {
+        return;
+      }
+      final hunterDrawn = CharacterArt.drawActor(
+        canvas,
+        hunterCenter,
+        portraitRadius,
+        maze.hunter.name,
+        heading: game.hunterHeading,
+        clock: game.clock + t,
+        moving: !game.isOver && game.clock > game.hunterHeadStart,
+        lunge: lunge,
+        facingLeft: game.hunterLookingLeft,
+        motionPhase: game.hunterDistance / 1.1,
+      );
+      if (!hunterDrawn) {
+        if (maze.hunter == AnimalKind.snake) _drawSnake(canvas, cell, at);
+        _roleDisc(canvas, hunterCenter, portraitRadius, _danger);
+        drawMazeAnimal(
+          canvas,
+          hunterCenter,
+          portraitRadius,
+          maze.hunter,
+          hunter: true,
+        );
+      }
+    }
+
     // After escaping, the runner dashes off through the gap.
     var runner = at(game.runnerAt);
     if (game.state == EscapeState.escaped) {
@@ -365,8 +413,97 @@ class _EscapePainter extends CustomPainter {
           ..strokeWidth = math.max(2, cell * .08),
       );
     }
-    _roleDisc(canvas, runner, portraitRadius, _exitGreen);
-    drawPlayerPortrait(canvas, runner, portraitRadius, character);
+    final playerCenter = runner;
+    final settling = (game.clock - game.runnerLastMovedAt).clamp(0.0, .22);
+    final runningPose =
+        game.running ||
+        (!game.isOver && game.clock - game.runnerLastMovedAt < .22) ||
+        game.state == EscapeState.escaped;
+    if (hunterCenter.dy <= playerCenter.dy) drawHunter();
+    final playerDrawn =
+        CharacterArt.drawFace(
+          canvas,
+          playerCenter,
+          faceRadius,
+          character.name,
+          _exitGreen,
+          flip: game.runnerLookingLeft,
+        ) ||
+        CharacterArt.drawActor(
+          canvas,
+          playerCenter,
+          portraitRadius * .9,
+          character.name,
+          heading: Offset(game.facing.dx.toDouble(), game.facing.dy.toDouble()),
+          clock: game.clock + t,
+          moving: runningPose,
+          facingLeft: game.runnerLookingLeft,
+          motionPhase:
+              game.runnerDistance / 2.2 +
+              (game.running ? 0 : settling * 2.8) +
+              (game.state == EscapeState.escaped ? t * 2.8 : 0),
+        );
+    if (!playerDrawn) {
+      _roleDisc(canvas, playerCenter, portraitRadius, _exitGreen);
+      drawPlayerPortrait(canvas, playerCenter, portraitRadius, character);
+    }
+    if (hunterCenter.dy > playerCenter.dy) drawHunter();
+    canvas.restore();
+    if (!overview && camera.scale > 1.05) {
+      _drawMiniMap(canvas, size, camera, at);
+    }
+  }
+
+  void _drawMiniMap(
+    Canvas canvas,
+    Size size,
+    MazeCamera camera,
+    Offset Function(Offset) at,
+  ) {
+    final scale = math.min(72 / size.width, 104 / size.height);
+    final mapSize = Size(size.width * scale, size.height * scale);
+    final rect = Rect.fromLTWH(
+      size.width - mapSize.width - 8,
+      8,
+      mapSize.width,
+      mapSize.height,
+    );
+    final frame = RRect.fromRectAndRadius(
+      rect.inflate(3),
+      const Radius.circular(8),
+    );
+    canvas.drawRRect(
+      frame,
+      Paint()..color = Colors.white.withValues(alpha: .9),
+    );
+    canvas.save();
+    canvas.clipRRect(RRect.fromRectAndRadius(rect, const Radius.circular(5)));
+    canvas.translate(rect.left, rect.top);
+    canvas.scale(scale);
+    sceneCache.draw(canvas, (
+      game.maze,
+      size,
+      sceneryImage,
+    ), (background) => _paintScenery(background, size));
+    canvas.drawRect(
+      camera.visibleWorld,
+      Paint()..color = Colors.white.withValues(alpha: .18),
+    );
+    canvas.drawRect(
+      camera.visibleWorld,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5 / scale,
+    );
+    for (final (point, color) in [
+      (at(game.snakeAt), _danger),
+      (at(game.runnerAt), _exitGreen),
+    ]) {
+      canvas.drawCircle(point, 3.5 / scale, Paint()..color = Colors.white);
+      canvas.drawCircle(point, 2.5 / scale, Paint()..color = color);
+    }
+    canvas.restore();
   }
 
   // A coloured disc with a soft drop that lifts a portrait off the maze.
@@ -675,5 +812,6 @@ class _EscapePainter extends CustomPainter {
   bool shouldRepaint(covariant _EscapePainter oldDelegate) =>
       !identical(oldDelegate.game, game) ||
       oldDelegate.character != character ||
+      oldDelegate.overview != overview ||
       oldDelegate.sceneryImage != sceneryImage;
 }

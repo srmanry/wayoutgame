@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../game/puzzle.dart';
+import 'character_art.dart';
 import 'critters.dart';
 
 class AnimalAvatar extends StatelessWidget {
@@ -31,13 +32,14 @@ class _AnimalPainter extends CustomPainter {
       kind != oldDelegate.kind;
 }
 
-// Vector portraits stay sharp at every board size and work without font assets.
+// The vector artwork remains available if the portrait asset cannot load.
 void drawAnimalPortrait(
   Canvas canvas,
   Offset center,
   double radius,
   AnimalKind kind,
 ) {
+  if (CharacterArt.draw(canvas, center, radius, kind.name)) return;
   // Everyone but the snake shows their whole chubby self.
   if (kind != AnimalKind.snake) {
     drawCritter(canvas, center, radius * .9, kind, shadow: false);

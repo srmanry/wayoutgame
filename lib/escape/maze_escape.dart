@@ -38,7 +38,18 @@ class EscapeMaze {
   int get cellCount => _cells.length;
   static double gradeOf(int number) => (number - 1) / (count - 1);
   AnimalKind get prey => PuzzleLevel.preyFor(number);
-  AnimalKind get hunter => PuzzleLevel.hunterFor(number);
+  // The escape runner is human. Give this chase its own predator roster,
+  // independent of the small animals used in Animal Rescue.
+  static const _hunters = [
+    AnimalKind.lion,
+    AnimalKind.wolf,
+    AnimalKind.fox,
+    AnimalKind.lion,
+    AnimalKind.snake,
+    AnimalKind.owl,
+    AnimalKind.lion,
+  ];
+  AnimalKind get hunter => _hunters[(number - 1) % _hunters.length];
 
   String get designName => '${_titleWords[(number - 1) ~/ 10]} $_shapeName';
   static const _titleWords = [
@@ -435,6 +446,12 @@ class EscapeGame extends ChangeNotifier {
   Direction? hintDirection;
   // The way the runner last set off, so it faces where it goes.
   Direction facing = Direction.right;
+  Offset hunterHeading = const Offset(1, 0);
+  bool runnerLookingLeft = false;
+  bool hunterLookingLeft = false;
+  double runnerDistance = 0;
+  double hunterDistance = 0;
+  double runnerLastMovedAt = -1000;
 
   /// Seconds since the level began.
   double get clock => _clock;
@@ -489,6 +506,12 @@ class EscapeGame extends ChangeNotifier {
     _clock = 0;
     hintDirection = null;
     facing = Direction.right;
+    hunterHeading = const Offset(1, 0);
+    runnerLookingLeft = false;
+    hunterLookingLeft = false;
+    runnerDistance = 0;
+    hunterDistance = 0;
+    runnerLastMovedAt = -1000;
   }
 
   static Offset _point(Cell c) => Offset(c.x.toDouble(), c.y.toDouble());
@@ -511,6 +534,7 @@ class EscapeGame extends ChangeNotifier {
     moves++;
     hintDirection = null;
     facing = d;
+    if (d.dx != 0) runnerLookingLeft = d.dx < 0;
     _runnerPath.addAll(path);
     if (runnerCell == maze.exit && d == Direction.right) _win();
     notifyListeners();
@@ -538,8 +562,14 @@ class EscapeGame extends ChangeNotifier {
   void advance(double dt) {
     if (isOver) return;
     _clock += dt;
+    final previousRunner = runnerAt;
+    final previousHunter = snakeAt;
     _moveRunner(dt);
     if (_clock > hunterHeadStart) _moveSnake(dt);
+    final traveled = (runnerAt - previousRunner).distance;
+    runnerDistance += traveled;
+    hunterDistance += (snakeAt - previousHunter).distance;
+    if (traveled > 0) runnerLastMovedAt = _clock;
     if ((snakeAt - runnerAt).distance < .6) {
       state = EscapeState.caught;
       notifyListeners();
@@ -585,6 +615,8 @@ class EscapeGame extends ChangeNotifier {
             })();
       final gap = _point(next) - snakeAt;
       if (gap.distance == 0) break;
+      hunterHeading = gap / gap.distance;
+      if (gap.dx != 0) hunterLookingLeft = gap.dx < 0;
       if (gap.distance <= step) {
         snakeAt = _point(next);
         snakeCell = next;

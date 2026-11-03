@@ -33,6 +33,7 @@ enum AnimalKind {
   squirrel,
   fawn,
   piglet,
+  lion,
 }
 
 class RescueTarget {

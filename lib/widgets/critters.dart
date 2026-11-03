@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../game/puzzle_rules.dart';
+import 'character_art.dart';
 import 'hunter_portrait.dart';
 
 // Full-body vector animals. Prey stand facing us, chubby and shaded; hunters
@@ -68,6 +69,7 @@ void drawMazeAnimal(
   AnimalKind kind, {
   bool hunter = false,
 }) {
+  if (CharacterArt.draw(canvas, center, radius, kind.name)) return;
   if (hunter) {
     drawHunterPortrait(canvas, center, radius, kind);
     return;
@@ -269,6 +271,11 @@ void drawMazeAnimal(
     const Color(0xFFE3E7EE),
     const Color(0xFF545D6D),
   ),
+  AnimalKind.lion => (
+    const Color(0xFFCB8B38),
+    const Color(0xFFFFDF9E),
+    const Color(0xFF70421E),
+  ),
   AnimalKind.cat => (
     const Color(0xFFF2A24E),
     const Color(0xFFFFEBD2),
@@ -310,6 +317,10 @@ void drawCritter(
   bool flip = false,
   bool shadow = true,
 }) {
+  final portraitCenter = moving
+      ? center + Offset(0, math.sin(phase) * radius * .06)
+      : center;
+  if (CharacterArt.draw(canvas, portraitCenter, radius, kind.name)) return;
   canvas.save();
   canvas.translate(center.dx, center.dy);
   canvas.scale(flip ? -radius : radius, radius);
@@ -762,6 +773,17 @@ void drawStalker(
   Offset heading,
   double phase,
 ) {
+  if (CharacterArt.drawActor(
+    canvas,
+    center,
+    cell * .48,
+    kind.name,
+    heading: heading,
+    clock: phase,
+    moving: true,
+  )) {
+    return;
+  }
   canvas.save();
   canvas.translate(center.dx, center.dy);
   canvas.rotate(heading.direction);

@@ -17,6 +17,7 @@ import '../config/progress_store.dart';
 // Restore this import when enabling the competition button below.
 // import '../multiplayer/competition_screen.dart';
 import '../widgets/animal_avatar.dart';
+import '../widgets/character_art.dart';
 import '../widgets/celebration.dart';
 import '../widgets/game_button.dart';
 import '../widgets/scene_backdrop.dart';
@@ -1758,13 +1759,25 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (hunter)
+          if (CharacterArt.ready)
+            SizedBox.square(
+              dimension: 30,
+              child: CustomPaint(
+                painter: _FacePainter(
+                  hunter ? kind.name : _character.name,
+                  hunter ? MazePalette.hunter : MazePalette.player,
+                ),
+              ),
+            )
+          else if (hunter)
             MazeAnimalAvatar(kind: kind, hunter: hunter, size: 26)
           else
             PlayerAvatar(character: _character, size: 26),
           const SizedBox(width: 4),
           Text(
-            hunter ? 'Hunter' : 'You',
+            hunter
+                ? '${kind.name[0].toUpperCase()}${kind.name.substring(1)}'
+                : 'You',
             style: TextStyle(
               color: color,
               fontSize: 11,
@@ -2663,4 +2676,24 @@ class _LevelTile extends StatelessWidget {
       ),
     );
   }
+}
+
+// A character's round face token, for the legend above the maze.
+class _FacePainter extends CustomPainter {
+  const _FacePainter(this.character, this.ring);
+  final String character;
+  final Color ring;
+
+  @override
+  void paint(Canvas canvas, Size size) => CharacterArt.drawFace(
+    canvas,
+    size.center(Offset.zero),
+    size.shortestSide / 2 - 1,
+    character,
+    ring,
+  );
+
+  @override
+  bool shouldRepaint(covariant _FacePainter old) =>
+      old.character != character || old.ring != ring;
 }

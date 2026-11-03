@@ -12,12 +12,14 @@ class GameButton extends StatefulWidget {
     required this.child,
     this.radius = 24,
     this.depth = 3,
+    this.gradient,
   });
 
   final Color color, shade;
   final VoidCallback? onTap;
   final Widget child;
   final double radius, depth;
+  final Gradient? gradient;
 
   @override
   State<GameButton> createState() => _GameButtonState();
@@ -64,6 +66,7 @@ class _GameButtonState extends State<GameButton> {
               ),
               decoration: BoxDecoration(
                 color: widget.color,
+                gradient: widget.gradient,
                 borderRadius: BorderRadius.circular(widget.radius),
                 border: Border.all(color: Colors.white.withValues(alpha: .18)),
               ),

@@ -8,6 +8,7 @@ import '../escape/maze_escape.dart' show EscapeMaze;
 import '../multiplayer/competition_screen.dart';
 import '../game/puzzle_rules.dart';
 import '../widgets/critters.dart';
+import '../widgets/character_art.dart';
 import '../widgets/game_button.dart';
 import '../widgets/player_avatar.dart';
 import 'arrow_game_screen.dart';
@@ -33,7 +34,7 @@ class _GameHubScreenState extends State<GameHubScreen>
   void _home() => setState(() => _selected = 0);
 
   // One entrance played on start, and a slow loop for everything that
-  // keeps moving (background, previews, the CONTINUE pulse).
+  // keeps moving (background and previews).
   late final _intro = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
@@ -325,60 +326,147 @@ class _GameHubScreenState extends State<GameHubScreen>
 
   Widget _continueButton(PlayMode mode) {
     final level = _progress(mode).level;
-    return AnimatedBuilder(
-      animation: _loop,
-      builder: (context, child) => Transform.scale(
-        scale: 1 + .025 * math.sin(_loop.value * math.pi * 2 * 3),
-        child: child,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: _gold.withValues(alpha: .16),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: GameButton(
         color: _gold,
-        shade: const Color(0xFFC98A00),
+        shade: const Color(0xFFBD791C),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFE59A), Color(0xFFFFCB4B), Color(0xFFFFB52E)],
+        ),
         radius: 26,
+        depth: 4,
         onTap: () => _open(mode),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(25),
+          child: Stack(
             children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: const BoxDecoration(
-                  color: _night,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.play_arrow_rounded,
-                  color: _gold,
-                  size: 38,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'CONTINUE',
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: _night,
-                        fontSize: 28,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1,
+              Positioned(
+                right: -28,
+                top: -42,
+                child: ExcludeSemantics(
+                  child: Container(
+                    width: 178,
+                    height: 178,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: .22),
+                        width: 24,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${mode.title} · Level $level',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _night.withValues(alpha: .75),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'JUMP BACK IN',
+                            style: TextStyle(
+                              color: Color(0xFF6C491E),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.7,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          const Text(
+                            'Continue',
+                            style: TextStyle(
+                              color: _night,
+                              fontSize: 30,
+                              height: 1.1,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -.9,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                mode.title,
+                                style: const TextStyle(
+                                  color: Color(0xFF604521),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: .4),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Level $level',
+                                  style: const TextStyle(
+                                    color: _night,
+                                    fontSize: 11,
+                                    height: 1,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(21),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: .5),
+                        ),
+                      ),
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: const BoxDecoration(
+                          borderRadius: BorderRadius.all(Radius.circular(16)),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF3C306A), _night],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0x304D3014),
+                              blurRadius: 10,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.sports_esports_rounded,
+                          color: Color(0xFFFFD775),
+                          size: 34,
+                        ),
                       ),
                     ),
                   ],
@@ -682,8 +770,41 @@ class _GamePreview extends CustomPainter {
         }
 
         final run = (t * 2) % 1.0;
-        drawCritter(canvas, along(run - .2), 9, AnimalKind.fox, shadow: false);
-        drawPlayerPortrait(canvas, along(run), 9, PlayerCharacter.male);
+        Offset headingAt(double fraction) {
+          final segment = (fraction.clamp(0.0, 1.0) * (route.length - 1))
+              .floor()
+              .clamp(0, route.length - 2);
+          return route[segment + 1] - route[segment];
+        }
+
+        if (!CharacterArt.drawActor(
+          canvas,
+          along(run - .2),
+          11,
+          'lion',
+          heading: headingAt(run - .2),
+          clock: t * 6,
+          moving: GameSettings.homeMotion,
+        )) {
+          drawMazeAnimal(
+            canvas,
+            along(run - .2),
+            9,
+            AnimalKind.lion,
+            hunter: true,
+          );
+        }
+        if (!CharacterArt.drawActor(
+          canvas,
+          along(run),
+          10,
+          'male',
+          heading: headingAt(run),
+          clock: t * 6,
+          moving: GameSettings.homeMotion,
+        )) {
+          drawPlayerPortrait(canvas, along(run), 9, PlayerCharacter.male);
+        }
     }
     canvas.restore();
   }

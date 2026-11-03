@@ -29,6 +29,53 @@ EscapeState playWell(EscapeGame game, {double think = .35}) {
 }
 
 void main() {
+  test('runner gait follows travel, settles when stopped and resets', () {
+    final game = EscapeGame();
+    addTearDown(game.dispose);
+    expect(game.runnerDistance, 0);
+    game.swipe(game.maze.waysFrom(game.runnerCell).first);
+    game.advance(.02);
+    expect(game.runnerDistance, greaterThan(0));
+    expect(game.runnerLastMovedAt, game.clock);
+    while (game.running && !game.isOver) {
+      game.advance(.01);
+    }
+    final distance = game.runnerDistance;
+    game.advance(.01);
+    expect(game.runnerDistance, distance);
+    expect(game.clock, greaterThan(game.runnerLastMovedAt));
+    game.restart();
+    expect(game.runnerDistance, 0);
+    expect(game.hunterDistance, 0);
+    expect(game.runnerLastMovedAt, lessThan(0));
+  });
+
+  test('human escape levels include a lion with pursuit-facing movement', () {
+    expect(EscapeMaze.level(1).hunter, AnimalKind.lion);
+    expect(EscapeMaze.level(15).hunter, AnimalKind.lion);
+    final game = EscapeGame();
+    game.advance(game.hunterHeadStart);
+    var steps = 0;
+    for (var frame = 0; frame < 100 && !game.isOver; frame++) {
+      final previous = game.snakeAt;
+      game.advance(.01);
+      final movement = game.snakeAt - previous;
+      if (movement.distance > 0) {
+        // Tiny steps stay on one segment, except at a corner crossing.
+        if (movement.dx.abs() < .0001 || movement.dy.abs() < .0001) {
+          expect(
+            movement.dx * game.hunterHeading.dx +
+                movement.dy * game.hunterHeading.dy,
+            greaterThan(0),
+          );
+          steps++;
+        }
+      }
+    }
+    expect(steps, greaterThan(10));
+    game.dispose();
+  });
+
   test('every maze hangs together with a way out on the right', () {
     for (var number = 1; number <= EscapeMaze.count; number++) {
       final maze = EscapeMaze.level(number);

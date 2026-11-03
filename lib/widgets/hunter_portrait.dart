@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../game/puzzle_rules.dart';
+import 'character_art.dart';
 
-/// Five coordinated hunter portraits, with shapes readable at maze scale.
+/// Coordinated hunter portraits, with vector fallback if assets cannot load.
 void drawHunterPortrait(
   Canvas canvas,
   Offset center,
   double radius,
   AnimalKind kind,
 ) {
+  if (CharacterArt.draw(canvas, center, radius, kind.name)) return;
   canvas.save();
   canvas.translate(center.dx, center.dy);
   canvas.scale(radius);
@@ -19,6 +21,7 @@ void drawHunterPortrait(
     AnimalKind.fox => const Color(0xFFE89448),
     AnimalKind.wolf => const Color(0xFF8A9BB0),
     AnimalKind.cat => const Color(0xFFC99569),
+    AnimalKind.lion => const Color(0xFFD69A46),
     _ => const Color(0xFFAA7E67),
   };
   final shade = Color.lerp(fur, ink, .34)!;
@@ -52,7 +55,12 @@ void drawHunterPortrait(
   );
 
   // Distinct ears keep each hunter recognizable without a surrounding badge.
-  if (kind != AnimalKind.snake) {
+  if (kind == AnimalKind.lion) {
+    oval(0, .03, 1.95, 1.95, const Color(0xFF85502C));
+    for (final side in [-1.0, 1.0]) {
+      oval(side * .53, -.45, .4, .4, fur);
+    }
+  } else if (kind != AnimalKind.snake) {
     for (final side in [-1.0, 1.0]) {
       final ear = Path()
         ..moveTo(side * .2, -.43)

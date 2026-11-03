@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'character_art.dart';
+
 enum PlayerCharacter {
   male('Male'),
   female('Female');
@@ -8,7 +10,7 @@ enum PlayerCharacter {
   final String label;
 }
 
-/// The same illustrated portrait is used in the picker, legend and maze.
+/// The same portrait is used in the picker, legend and maze.
 class PlayerAvatar extends StatelessWidget {
   const PlayerAvatar({super.key, required this.character, this.size = 40});
 
@@ -49,6 +51,7 @@ void drawPlayerPortrait(
   double radius,
   PlayerCharacter character,
 ) {
+  if (CharacterArt.draw(canvas, center, radius, character.name)) return;
   canvas.save();
   canvas.translate(center.dx, center.dy);
   canvas.scale(radius);
