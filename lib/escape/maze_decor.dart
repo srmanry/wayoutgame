@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -2179,6 +2180,22 @@ extension MazeDecorPainting on MazeDecor {
     }
   }
 
+  // A soft-edged light for the per-frame layer, where a blur would be costly.
+  void _softGlow(Canvas canvas, Offset at, double radius, Color colour) {
+    if (radius <= 0) return;
+    canvas.drawCircle(
+      at,
+      radius,
+      Paint()
+        ..shader = ui.Gradient.radial(
+          at,
+          radius,
+          [colour, colour, colour.withValues(alpha: 0)],
+          const [0, .55, 1],
+        ),
+    );
+  }
+
   /// The moving touches, drawn every frame: a glow at the way out and the
   /// level's own wildlife or weather.
   void paintLife(Canvas canvas, Size size, MazeLayout layout, double time) {
@@ -2186,12 +2203,11 @@ extension MazeDecorPainting on MazeDecor {
     final cell = layout.cell;
     final exit = layout.centre(maze.exit.x + .7, maze.exit.y.toDouble());
     final pulse = .5 + .5 * math.sin(time * 3);
-    canvas.drawCircle(
+    _softGlow(
+      canvas,
       exit,
-      cell * (.75 + .15 * pulse),
-      Paint()
-        ..color = const Color(0xFFFFF3A6).withValues(alpha: .25 + .2 * pulse)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * .3),
+      cell * (1.05 + .15 * pulse),
+      const Color(0xFFFFF3A6).withValues(alpha: .25 + .2 * pulse),
     );
     switch (lifeKind) {
       case LifeKind.butterflies:
@@ -2292,12 +2308,11 @@ extension MazeDecorPainting on MazeDecor {
                 ((h ~/ 100 % 100) / 100 + math.cos(time * .17 + i) * .04),
           );
           final colour = colours[i % colours.length];
-          canvas.drawCircle(
+          _softGlow(
+            canvas,
             p,
-            cell * .22 * glow,
-            Paint()
-              ..color = colour.withValues(alpha: .25 * glow)
-              ..maskFilter = MaskFilter.blur(BlurStyle.normal, cell * .1),
+            cell * .22 * glow + cell * .1,
+            colour.withValues(alpha: .25 * glow),
           );
           canvas.drawCircle(
             p,

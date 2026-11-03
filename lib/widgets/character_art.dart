@@ -135,9 +135,15 @@ class CharacterArt {
 
   static bool get ready => _walk != null;
 
+  /// The atlas every portrait and face comes from, read at startup.
   static Future<void> load() async {
+    _walk ??= await _decode(motionAsset);
+  }
+
+  /// The full-body human poses. The maze shows faces, so nothing in the game
+  /// needs these at startup.
+  static Future<void> loadHumanPoses() async {
     await Future.wait([
-      if (_walk == null) _decode(motionAsset).then((image) => _walk = image),
       if (_humanRun == null)
         _decode(humanMotionAsset).then((image) => _humanRun = image),
       if (_humanIdle == null)
@@ -145,11 +151,11 @@ class CharacterArt {
     ]);
   }
 
+  // Decoded at the file's own size: enlarging adds memory but no detail.
   static Future<ui.Image> _decode(String asset) async {
     final bytes = await rootBundle.load(asset);
     final codec = await ui.instantiateImageCodec(
       bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
-      targetWidth: 1024,
     );
     try {
       return (await codec.getNextFrame()).image;

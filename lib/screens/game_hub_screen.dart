@@ -127,12 +127,16 @@ class _GameHubScreenState extends State<GameHubScreen>
     child: IndexedStack(
       index: _selected,
       children: [
-        _homeScreen(),
+        // Only the screen on show animates; the hidden one spends no frames.
+        TickerMode(enabled: _selected == 0, child: _homeScreen()),
         // One game screen keeps every mode's progress; the card picks which
         // mode it shows.
-        _visited.isNotEmpty
-            ? GameScreen(mode: _mode, onHome: _home, active: _selected == 1)
-            : const SizedBox.shrink(),
+        TickerMode(
+          enabled: _selected == 1,
+          child: _visited.isNotEmpty
+              ? GameScreen(mode: _mode, onHome: _home, active: _selected == 1)
+              : const SizedBox.shrink(),
+        ),
       ],
     ),
   );

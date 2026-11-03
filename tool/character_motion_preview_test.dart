@@ -10,6 +10,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('export the live character gait preview', () async {
     await CharacterArt.load();
+    await CharacterArt.loadHumanPoses();
     final directory = Directory('/tmp/arrow-motion-preview')
       ..createSync(recursive: true);
     for (var frame = 0; frame < 96; frame++) {

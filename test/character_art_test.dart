@@ -10,6 +10,7 @@ void main() {
 
   test('hunters and human players have nonempty bundled portraits', () async {
     await CharacterArt.load();
+    await CharacterArt.loadHumanPoses();
     final characters = [
       for (final kind in [
         AnimalKind.lion,
@@ -91,6 +92,7 @@ void main() {
     'human idle directions are distinct and feet stay on the ground',
     () async {
       await CharacterArt.load();
+      await CharacterArt.loadHumanPoses();
       for (final character in ['male', 'female']) {
         final directions = <int>{};
         for (final heading in [

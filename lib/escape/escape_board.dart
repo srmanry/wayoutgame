@@ -188,7 +188,12 @@ class _EscapeBoardState extends State<EscapeBoard>
   }
 
   @override
-  Widget build(BuildContext context) => Semantics(
+  Widget build(BuildContext context) {
+    _sceneCache.pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    return _board(context);
+  }
+
+  Widget _board(BuildContext context) => Semantics(
     label:
         'Maze. Swipe to run your ${widget.character.label.toLowerCase()} character to the gap on the right before the ${game.maze.hunter.name} catches you.',
     child: GestureDetector(
@@ -311,11 +316,12 @@ class _EscapePainter extends CustomPainter {
     canvas.clipRect(Offset.zero & size);
     canvas.scale(camera.scale);
     canvas.translate(-camera.origin.dx, -camera.origin.dy);
-    sceneCache.draw(canvas, (
-      maze,
+    sceneCache.draw(
+      canvas,
+      (maze, size, sceneryImage),
       size,
-      sceneryImage,
-    ), (background) => _paintScenery(background, size));
+      (background) => _paintScenery(background, size),
+    );
     MazeDecor.forLevel(maze.number)?.paintLife(
       canvas,
       size,
@@ -480,11 +486,12 @@ class _EscapePainter extends CustomPainter {
     canvas.clipRRect(RRect.fromRectAndRadius(rect, const Radius.circular(5)));
     canvas.translate(rect.left, rect.top);
     canvas.scale(scale);
-    sceneCache.draw(canvas, (
-      game.maze,
+    sceneCache.draw(
+      canvas,
+      (game.maze, size, sceneryImage),
       size,
-      sceneryImage,
-    ), (background) => _paintScenery(background, size));
+      (background) => _paintScenery(background, size),
+    );
     canvas.drawRect(
       camera.visibleWorld,
       Paint()..color = Colors.white.withValues(alpha: .18),
