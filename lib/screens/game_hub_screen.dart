@@ -6,7 +6,9 @@ import '../config/game_settings.dart';
 import '../config/progress_store.dart';
 import '../escape/maze_escape.dart' show EscapeMaze;
 import '../multiplayer/competition_screen.dart';
+import '../game/level_preload.dart';
 import '../game/puzzle_rules.dart';
+import '../widgets/status_bar_tone.dart';
 import '../widgets/critters.dart';
 import '../widgets/character_art.dart';
 import '../widgets/game_button.dart';
@@ -48,6 +50,16 @@ class _GameHubScreenState extends State<GameHubScreen>
   void initState() {
     super.initState();
     if (GameSettings.homeMotion) _loop.repeat();
+    LevelPreload.maze(ProgressStore.startLevel('escape', EscapeMaze.count));
+    for (final (key, mode) in const [
+      ('basic', GameMode.basic),
+      ('rescue', GameMode.rescue),
+    ]) {
+      LevelPreload.puzzle(
+        ProgressStore.startLevel(key, PuzzleLevel.count),
+        mode,
+      );
+    }
   }
 
   @override
@@ -146,121 +158,129 @@ class _GameHubScreenState extends State<GameHubScreen>
       0,
       (sum, m) => sum + _progress(m).stars,
     );
-    return Scaffold(
-      backgroundColor: _night,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: CustomPaint(painter: _HomeBackdrop(_loop)),
+    return StatusBarTone(
+      background: _night,
+      child: Scaffold(
+        backgroundColor: _night,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: CustomPaint(painter: _HomeBackdrop(_loop)),
+              ),
             ),
-          ),
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1080),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _enter(0, _topBar(totalStars)),
-                      // Only once something has been played: carry on there.
-                      if (_lastMode case final last?) ...[
-                        const SizedBox(height: 26),
-                        _enter(1, _continueButton(last)),
-                      ],
-                      const SizedBox(height: 28),
-                      _enter(
-                        2,
-                        const Text(
-                          'CHOOSE A GAME',
-                          style: TextStyle(
-                            color: Color(0xFFB9B2E8),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final wide = constraints.maxWidth >= 780;
-                          final cards = [
-                            for (final (i, mode) in PlayMode.values.indexed)
-                              _enter(3 + i, _gameCard(mode)),
-                          ];
-                          return wide
-                              ? Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    for (var i = 0; i < cards.length; i++) ...[
-                                      if (i != 0) const SizedBox(width: 16),
-                                      Expanded(child: cards[i]),
-                                    ],
-                                  ],
-                                )
-                              : Column(
-                                  children: [
-                                    for (final card in cards)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 16,
-                                        ),
-                                        child: card,
-                                      ),
-                                  ],
-                                );
-                        },
-                      ),
-                      if (GameSettings.showCompetition) ...[
-                        const SizedBox(height: 4),
-                        GameButton(
-                          color: const Color(0xFF3A3170),
-                          shade: const Color(0xFF241E52),
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const CompetitionScreen(),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1080),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _enter(0, _topBar(totalStars)),
+                        // Only once something has been played: carry on there.
+                        if (_lastMode case final last?) ...[
+                          const SizedBox(height: 26),
+                          _enter(1, _continueButton(last)),
+                        ],
+                        const SizedBox(height: 28),
+                        _enter(
+                          2,
+                          const Text(
+                            'CHOOSE A GAME',
+                            style: TextStyle(
+                              color: Color(0xFFB9B2E8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 2,
                             ),
                           ),
-                          child: const Padding(
-                            padding: EdgeInsets.all(18),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.emoji_events_rounded,
-                                  color: _gold,
-                                  size: 28,
-                                ),
-                                SizedBox(width: 14),
-                                Expanded(
-                                  child: Text(
-                                    'Competition',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white,
-                                      fontSize: 16,
+                        ),
+                        const SizedBox(height: 12),
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final wide = constraints.maxWidth >= 780;
+                            final cards = [
+                              for (final (i, mode) in PlayMode.values.indexed)
+                                _enter(3 + i, _gameCard(mode)),
+                            ];
+                            return wide
+                                ? Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      for (
+                                        var i = 0;
+                                        i < cards.length;
+                                        i++
+                                      ) ...[
+                                        if (i != 0) const SizedBox(width: 16),
+                                        Expanded(child: cards[i]),
+                                      ],
+                                    ],
+                                  )
+                                : Column(
+                                    children: [
+                                      for (final card in cards)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 16,
+                                          ),
+                                          child: card,
+                                        ),
+                                    ],
+                                  );
+                          },
+                        ),
+                        if (GameSettings.showCompetition) ...[
+                          const SizedBox(height: 4),
+                          GameButton(
+                            color: const Color(0xFF3A3170),
+                            shade: const Color(0xFF241E52),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const CompetitionScreen(),
+                              ),
+                            ),
+                            child: const Padding(
+                              padding: EdgeInsets.all(18),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.emoji_events_rounded,
+                                    color: _gold,
+                                    size: 28,
+                                  ),
+                                  SizedBox(width: 14),
+                                  Expanded(
+                                    child: Text(
+                                      'Competition',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white,
+                                        fontSize: 16,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                Icon(
-                                  Icons.arrow_forward_rounded,
-                                  color: Colors.white,
-                                ),
-                              ],
+                                  Icon(
+                                    Icons.arrow_forward_rounded,
+                                    color: Colors.white,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -440,38 +460,55 @@ class _GameHubScreenState extends State<GameHubScreen>
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(21),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: .5),
-                        ),
-                      ),
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        decoration: const BoxDecoration(
-                          borderRadius: BorderRadius.all(Radius.circular(16)),
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFF3C306A), _night],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0x304D3014),
-                              blurRadius: 10,
-                              offset: Offset(0, 4),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(21),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: .5),
                             ),
-                          ],
+                          ),
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: const BoxDecoration(
+                              borderRadius: BorderRadius.all(
+                                Radius.circular(16),
+                              ),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF3C306A), _night],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Color(0x304D3014),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.sports_esports_rounded,
+                              color: Color(0xFFFFD775),
+                              size: 34,
+                            ),
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.sports_esports_rounded,
-                          color: Color(0xFFFFD775),
-                          size: 34,
+                        const SizedBox(height: 5),
+                        const Text(
+                          'Play',
+                          style: TextStyle(
+                            color: _night,
+                            fontSize: 14,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ),

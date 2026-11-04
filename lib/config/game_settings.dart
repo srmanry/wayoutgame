@@ -19,6 +19,10 @@ class GameSettings {
   // Widget tests switch it off and move the clock by hand.
   static bool escapeClock = true;
 
+  // Levels are built ahead of time on a background isolate. Widget tests
+  // switch it off: their fake clock never lets the isolate report back.
+  static bool preloadLevels = true;
+
   // Looping motion: the home backdrop, previews, CONTINUE pulse and the
   // maze pad's breathing arrows.
   // Widget tests switch it off so pumpAndSettle can settle.

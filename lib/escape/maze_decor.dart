@@ -1450,6 +1450,72 @@ class MazeDecor {
 
   static final _generated = <int, MazeDecor>{};
 
+  static final _headerFrames = <int, FrameStyle>{};
+
+  /// The frame for the level's header. Only level 2 keeps the striped awning;
+  /// the other awning worlds take turns with plainer headers. Buttons look the
+  /// same on a crate as on an awning, so the rest of the screen still matches.
+  static FrameStyle? headerFrame(int level) {
+    if (_headerFrames.isEmpty) {
+      var turn = 0;
+      for (var n = 1; n <= EscapeMaze.count; n++) {
+        final frame = forLevel(n)!.frame;
+        _headerFrames[n] = frame.shape != FrameShape.awning || n == 2
+            ? frame
+            : switch (turn++ % 4) {
+                0 => frame.withHeader(
+                  FrameShape.crate,
+                  HeaderLayout.sign,
+                  board: frame.look.face,
+                ),
+                1 => frame.withHeader(FrameShape.awning, HeaderLayout.ribbon),
+                2 => frame.withHeader(
+                  FrameShape.crate,
+                  HeaderLayout.badge,
+                  board: frame.look.face,
+                ),
+                _ => frame.withHeader(FrameShape.awning, HeaderLayout.badge),
+              };
+      }
+    }
+    return _headerFrames[level];
+  }
+
+  static final _footerScenes = <int, int?>{};
+  static const wovenScene = 4, bambooScene = 5;
+
+  /// The level's footer: a shared scene that suits its world, or null for the
+  /// world's own. Levels take turns, so no two in a row look alike.
+  static int? footerScene(int level) {
+    if (_footerScenes.isEmpty) {
+      var turn = 0;
+      int? previous = -1;
+      for (var n = 1; n <= EscapeMaze.count; n++) {
+        final choices = switch (forLevel(n)?.frame.shape) {
+          // Water and sand keep to what stands on a shore or in the dry; flowers
+          // and long grass belong to the green worlds.
+          FrameShape.driftwood => const <int?>[null, 9, 2, 8, 0],
+          FrameShape.sandstone => const <int?>[null, 8, 0, 9, 2],
+          // A fence world has no footer of its own but the scenes.
+          FrameShape.crate => const <int?>[6, 0, 7, 1, 9, 2, 8, 3],
+          // Past the hand-finished levels the log would only come back recoloured.
+          FrameShape.wood when n > 40 => const <int?>[6, 0, 7, 1, 9, 2, 8, 3],
+          _ => const <int?>[null, 6, 0, 7, 1, 9, 2, 8, 3],
+        };
+        var pick = choices[turn++ % choices.length];
+        if (pick == previous) pick = choices[turn++ % choices.length];
+        _footerScenes[n] = previous = pick;
+      }
+      // The frozen level keeps the ice wall made for it.
+      _footerScenes[70] = null;
+      // The bamboo fence belongs to the last level alone.
+      _footerScenes[EscapeMaze.count] = bambooScene;
+      // So does the woven fence to the level before the sea.
+      _footerScenes[198] = wovenScene;
+    }
+    return _footerScenes[level];
+  }
+
   // The hand-finished worlds that suit each landscape. Where there are two,
   // levels take them in turn.
   static List<MazeDecor> _templatesFor(MazeTheme theme) => switch (theme) {

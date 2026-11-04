@@ -16,6 +16,7 @@ import '../config/game_settings.dart';
 import '../config/progress_store.dart';
 // Restore this import when enabling the competition button below.
 // import '../multiplayer/competition_screen.dart';
+import '../widgets/status_bar_tone.dart';
 import '../widgets/animal_avatar.dart';
 import '../widgets/character_art.dart';
 import '../widgets/celebration.dart';
@@ -52,14 +53,13 @@ enum PlayMode {
 }
 
 class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
-  final _basicGame = PuzzleGame(
-    unlockAllLevels: GameSettings.unlockAllLevelsForTesting,
+  // Built when their mode is first opened: a board can take a moment to make.
+  PuzzleGame? _basic, _rescue;
+  PuzzleGame get _basicGame => _basic ??= _restoredPuzzle('basic');
+  PuzzleGame get _rescueGame => _rescue ??= _restoredPuzzle('rescue');
+  final _escapeGame = EscapeGame(
+    initialLevel: ProgressStore.startLevel('escape', EscapeMaze.count),
   );
-  final _rescueGame = PuzzleGame(
-    mode: GameMode.rescue,
-    unlockAllLevels: GameSettings.unlockAllLevelsForTesting,
-  );
-  final _escapeGame = EscapeGame();
   late PlayMode _view = widget.mode;
   GameMode get _mode =>
       _view == PlayMode.rescue ? GameMode.rescue : GameMode.basic;
@@ -74,6 +74,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _plainMaze ? MazePalette.text : _decor?.ink ?? MazePalette.text;
   // Animal Rescue has its own warm, game-like look.
   bool get _rescueLook => !_escaping && game.isRescue;
+  // What fills the screen behind the game; null is the theme's own colour.
+  Color? get _screenColour => _escaping
+      ? _plainMaze
+            ? Colors.white
+            : _decor?.ground ?? _mazePalette.canvas
+      : _rescueLook
+      ? const Color(0xFFFFF4E6)
+      : null;
   static const _sun = Color(0xFFFF8A3D);
   static const _sunShade = Color(0xFFCC5F1A);
   static const _sunInk = Color(0xFF5A2E0E);
@@ -106,35 +114,37 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   }
 
   // Picks up where the player left off, then saves as progress is made.
-  void _restoreProgress() {
-    for (final (key, puzzle) in [
-      ('basic', _basicGame),
-      ('rescue', _rescueGame),
-    ]) {
-      if (ProgressStore.load(key) case final saved?) {
-        puzzle.unlockedLevel = saved.unlocked;
-        puzzle.stars.addAll(saved.stars);
-        puzzle.selectLevel(saved.level);
-      }
-      var last = '';
-      puzzle.addListener(() {
-        final now =
-            '${puzzle.level.number}|${puzzle.unlockedLevel}|${puzzle.stars}';
-        if (now == last) return;
-        last = now;
-        ProgressStore.save(
-          key,
-          level: puzzle.level.number,
-          unlocked: puzzle.unlockedLevel,
-          stars: puzzle.stars,
-        );
-      });
+  PuzzleGame _restoredPuzzle(String key) {
+    final puzzle = PuzzleGame(
+      mode: key == 'rescue' ? GameMode.rescue : GameMode.basic,
+      initialLevel: ProgressStore.startLevel(key, PuzzleLevel.count),
+      unlockAllLevels: GameSettings.unlockAllLevelsForTesting,
+    );
+    if (ProgressStore.load(key) case final saved?) {
+      puzzle.unlockedLevel = saved.unlocked;
+      puzzle.stars.addAll(saved.stars);
     }
+    var last = '';
+    puzzle.addListener(() {
+      final now =
+          '${puzzle.level.number}|${puzzle.unlockedLevel}|${puzzle.stars}';
+      if (now == last) return;
+      last = now;
+      ProgressStore.save(
+        key,
+        level: puzzle.level.number,
+        unlocked: puzzle.unlockedLevel,
+        stars: puzzle.stars,
+      );
+    });
+    return puzzle;
+  }
+
+  void _restoreProgress() {
     final maze = _escapeGame;
     if (ProgressStore.load('escape') case final saved?) {
       maze.unlockedLevel = saved.unlocked;
       maze.stars.addAll(saved.stars);
-      maze.selectLevel(saved.level);
     }
     var last = '';
     maze.addListener(() {
@@ -174,8 +184,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _peekTimer?.cancel();
-    _basicGame.dispose();
-    _rescueGame.dispose();
+    _basic?.dispose();
+    _rescue?.dispose();
     _escapeGame.dispose();
     super.dispose();
   }
@@ -558,58 +568,56 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       canRequestFocus: widget.active,
       child: AnimatedBuilder(
         animation: _current,
-        builder: (context, _) => Scaffold(
-          backgroundColor: _escaping
-              ? _plainMaze
-                    ? Colors.white
-                    : _decor?.ground ?? _mazePalette.canvas
-              : _rescueLook
-              ? const Color(0xFFFFF4E6)
-              : null,
-          body: _withParty(
-            SafeArea(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1100),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final landscape =
-                          constraints.maxWidth > constraints.maxHeight &&
-                          constraints.maxHeight < 500;
-                      return Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          _escaping ? 2 : 16,
-                          12,
-                          _escaping ? 2 : 16,
-                          _escaping ? 0 : 12,
-                        ),
-                        child: landscape
-                            ? Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  SizedBox(width: 300, child: _navigation()),
-                                  const SizedBox(width: 16),
-                                  Expanded(child: _playArea()),
-                                ],
-                              )
-                            : Column(
-                                children: [
-                                  _navigation(),
-                                  const SizedBox(height: 8),
-                                  Expanded(
-                                    child: Center(
-                                      child: ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          maxWidth: 480,
+        builder: (context, _) => StatusBarTone(
+          background:
+              _screenColour ?? Theme.of(context).scaffoldBackgroundColor,
+          child: Scaffold(
+            backgroundColor: _screenColour,
+            body: _withParty(
+              SafeArea(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1100),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final landscape =
+                            constraints.maxWidth > constraints.maxHeight &&
+                            constraints.maxHeight < 500;
+                        return Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            _escaping ? 2 : 16,
+                            12,
+                            _escaping ? 2 : 16,
+                            _escaping ? 0 : 12,
+                          ),
+                          child: landscape
+                              ? Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(width: 300, child: _navigation()),
+                                    const SizedBox(width: 16),
+                                    Expanded(child: _playArea()),
+                                  ],
+                                )
+                              : Column(
+                                  children: [
+                                    _navigation(),
+                                    const SizedBox(height: 8),
+                                    Expanded(
+                                      child: Center(
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 480,
+                                          ),
+                                          child: _playArea(),
                                         ),
-                                        child: _playArea(),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                      );
-                    },
+                                  ],
+                                ),
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -744,7 +752,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   Widget _navigation() => Padding(
     padding: EdgeInsets.symmetric(horizontal: _escaping ? 6 : 0),
     child: switch (_decor) {
-      final decor? => _framedHeader(decor.frame),
+      final decor? => _framedHeader(
+        MazeDecor.headerFrame(_escapeGame.maze.number) ?? decor.frame,
+      ),
       null => _header(),
     },
   );
@@ -1405,37 +1415,48 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                               const SizedBox(width: 6),
                               _mazeRole(maze.hunter, hunter: true),
                               const Spacer(),
-                              IconButton(
-                                onPressed: () => setState(() {
-                                  _touchControls = !_touchControls;
-                                  ProgressStore.setBool(
-                                    'touchControls',
-                                    _touchControls,
-                                  );
-                                }),
-                                tooltip: _touchControls
-                                    ? 'Touch controls (tap to use arrows)'
-                                    : 'Arrow controls (tap to use touch)',
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 28,
-                                  height: 26,
+                              if (_decor != null)
+                                _frameCorner(
+                                  icon: _touchControls
+                                      ? Icons.pan_tool_alt_rounded
+                                      : Icons.gamepad_rounded,
+                                  tooltip: _touchControls
+                                      ? 'Touch controls (tap to use arrows)'
+                                      : 'Arrow controls (tap to use touch)',
+                                  onTap: _switchControls,
+                                )
+                              else
+                                IconButton(
+                                  onPressed: _switchControls,
+                                  tooltip: _touchControls
+                                      ? 'Touch controls (tap to use arrows)'
+                                      : 'Arrow controls (tap to use touch)',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 28,
+                                    height: 26,
+                                  ),
+                                  style: IconButton.styleFrom(
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    foregroundColor: palette.accent,
+                                  ),
+                                  iconSize: 18,
+                                  icon: Icon(
+                                    _touchControls
+                                        ? Icons.pan_tool_alt_outlined
+                                        : Icons.gamepad_outlined,
+                                  ),
                                 ),
-                                style: IconButton.styleFrom(
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  foregroundColor: palette.accent,
-                                ),
-                                iconSize: 18,
-                                icon: Icon(
-                                  _touchControls
-                                      ? Icons.pan_tool_alt_outlined
-                                      : Icons.gamepad_outlined,
-                                ),
-                              ),
-                              const SizedBox(width: 2),
+                              SizedBox(width: _decor != null ? 8 : 2),
                               if (_peekLeft != null)
                                 _peekCountdown()
+                              else if (_decor != null)
+                                _frameCorner(
+                                  icon: Icons.pause_rounded,
+                                  tooltip: 'Pause game',
+                                  onTap: run.isOver ? null : _startPeek,
+                                )
                               else
                                 IconButton(
                                   onPressed: run.isOver ? null : _startPeek,
@@ -1465,9 +1486,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                             child: AspectRatio(
                               aspectRatio: aspect,
                               child: Stack(
+                                // A gate's ring may reach past the board.
+                                clipBehavior: Clip.none,
                                 children: [
                                   Positioned.fill(
                                     child: ClipRect(
+                                      clipper: const _BoardClip(),
                                       child: EscapeBoard(
                                         key: ValueKey('escape-${run.revision}'),
                                         game: run,
@@ -1531,6 +1555,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           final decor? => MazeFooterFrame(
             style: decor.frame,
             plain: _plainMaze,
+            scene: MazeDecor.footerScene(run.maze.number),
             child: Visibility(
               visible: !_paused && !run.isOver,
               // The result uses the space previously occupied by the controls.
@@ -1553,57 +1578,29 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                     Expanded(
                       child: Center(
                         child: _touchControls && run.maze.number == 70
-                            ? MazeTouchHint(
-                                // Frosted ice that matches the snowfield.
-                                colours: const PadColours(
-                                  plate: Color(0xFFDCEEF8),
-                                  plateEdge: Color(0xFF8DB6D6),
-                                  key: Color(0xFFEAF4FB),
-                                  keyEdge: Color(0xFF8DB6D6),
-                                  arrow: Color(0xFF2E5B82),
-                                  glow: Color(0xFF4F86B4),
+                            ? AnimatedOpacity(
+                                opacity: run.moves == 0 ? 1 : 0,
+                                duration: const Duration(milliseconds: 350),
+                                child: MazeTouchHint(
+                                  // Frosted ice that matches the snowfield.
+                                  colours: const PadColours(
+                                    plate: Color(0xFFDCEEF8),
+                                    plateEdge: Color(0xFF8DB6D6),
+                                    key: Color(0xFFEAF4FB),
+                                    keyEdge: Color(0xFF8DB6D6),
+                                    arrow: Color(0xFF2E5B82),
+                                    glow: Color(0xFF4F86B4),
+                                  ),
+                                  face: const [
+                                    Color(0xFFF7FBFE),
+                                    Color(0xFFD9EAF6),
+                                  ],
+                                  ornament: Icons.ac_unit_rounded,
+                                  ink: decor.frame.look.title,
                                 ),
-                                face: const [
-                                  Color(0xFFF7FBFE),
-                                  Color(0xFFD9EAF6),
-                                ],
-                                ornament: Icons.ac_unit_rounded,
-                                ink: decor.frame.look.title,
                               )
                             : _touchControls
-                            ? Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: .85),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: palette.border),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.pan_tool_alt_rounded,
-                                      size: 18,
-                                      color: palette.accent,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Text(
-                                        'Tap left, right, up or down of you to run',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w800,
-                                          color: palette.accent,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
+                            ? _tapToMoveCue(visible: run.moves == 0)
                             : _arrowPad(enabled: !_paused && !run.isOver),
                       ),
                     ),
@@ -1639,39 +1636,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                   Expanded(
                     child: Center(
                       child: _touchControls
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 10,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: .85),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: palette.border),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.pan_tool_alt_rounded,
-                                    size: 18,
-                                    color: palette.accent,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      'Tap left, right, up or down of you to run',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                        color: palette.accent,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
+                          ? _tapToMoveCue(visible: run.moves == 0)
                           : _arrowPad(enabled: !_paused && !run.isOver),
                     ),
                   ),
@@ -1688,6 +1653,63 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       ],
     );
   }
+
+  void _switchControls() => setState(() {
+    _touchControls = !_touchControls;
+    ProgressStore.setBool('touchControls', _touchControls);
+  });
+
+  // A small button cut from the level's own frame, like Hint and Restart.
+  Widget _frameCorner({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+  }) {
+    final style = _decor!.frame;
+    return Tooltip(
+      message: tooltip,
+      child: FrameButton(
+        style: style,
+        onTap: onTap,
+        width: 34,
+        height: 34,
+        child: Icon(icon, size: 18, color: style.look.icon),
+      ),
+    );
+  }
+
+  // A short tap reminder on the same dark tag as Hint and Restart, in line
+  // with them so it reads on any footer; the first step fades it out.
+  Widget _tapToMoveCue({required bool visible}) => AnimatedOpacity(
+    opacity: visible ? 1 : 0,
+    duration: const Duration(milliseconds: 350),
+    child: Padding(
+      padding: const EdgeInsets.only(top: 51),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 1),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: .45),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.pan_tool_alt_rounded, size: 13, color: Colors.white),
+            SizedBox(width: 4),
+            Text(
+              'Tap to move',
+              maxLines: 1,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 
   // A small drop-down under the You badge; picking a look applies it.
   Future<void> _chooseCharacter(BuildContext anchor) async {
@@ -2696,4 +2718,16 @@ class _FacePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _FacePainter old) =>
       old.character != character || old.ring != ring;
+}
+
+// Clips the board a little outside itself, so the rings round the gates at
+// its edges are drawn whole.
+class _BoardClip extends CustomClipper<Rect> {
+  const _BoardClip();
+
+  @override
+  Rect getClip(Size size) => (Offset.zero & size).inflate(24);
+
+  @override
+  bool shouldReclip(_BoardClip oldClipper) => false;
 }

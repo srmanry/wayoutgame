@@ -689,10 +689,14 @@ class _BoardPainter extends CustomPainter {
       final (spot, heading) = _huntRoute(target, progress);
       var hunter = point(const Cell(0, 0)) + spot * cell;
       if (progress >= 1) hunter = point(target.cell);
-      canvas.saveLayer(
-        null,
-        Paint()..color = Colors.black.withValues(alpha: alpha),
-      );
+      // A layer the size of the screen is only worth it while it fades.
+      final fading = alpha < 1;
+      if (fading) {
+        canvas.saveLayer(
+          null,
+          Paint()..color = Colors.black.withValues(alpha: alpha),
+        );
+      }
       if (scene.predator == AnimalKind.snake) {
         _drawSnake(
           canvas,
@@ -735,7 +739,7 @@ class _BoardPainter extends CustomPainter {
           );
         }
       }
-      canvas.restore();
+      if (fading) canvas.restore();
     }
     if (escaping != null &&
         animation < 1 &&

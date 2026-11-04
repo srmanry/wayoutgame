@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 import 'maze_theme.dart';
 
 enum MazeImageScenery {
-  grass('assets/maze/natural_grass.png'),
-  city('assets/maze/city_rooftop.png');
+  grass('assets/maze/natural_grass.jpg'),
+  city('assets/maze/city_rooftop.jpg');
 
   const MazeImageScenery(this.asset);
   final String asset;

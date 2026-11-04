@@ -4,6 +4,7 @@ import 'dart:ui' show Offset;
 import 'package:flutter/foundation.dart';
 
 import '../config/game_settings.dart';
+import '../game/level_preload.dart';
 import '../game/puzzle_rules.dart';
 import 'maze_design.dart';
 
@@ -176,6 +177,43 @@ class EscapeMaze {
   /// point on the solution, so a generated level is never an unfair trap.
   late final double hunterDelay = _releaseTime(straight: true);
   late final double _layoutDelay = _releaseTime(straight: false);
+
+  /// The hunter's pace and wait when it sets off after the runner's first
+  /// swipe: as soon and as fast as still reaches every room of the solution
+  /// too late. It never crawls; a slower level makes it wait a little longer.
+  late final ({double speed, double lead}) stalking = _stalking();
+
+  ({double speed, double lead}) _stalking() {
+    const shortestLead = .4, slowest = 1.0;
+    final distance = _distances(snake);
+    final arrivals = <(double, double)>[];
+    var time = 0.0;
+    // The hunter catches from .6 of a room away; keep it a little further.
+    void arrive(Cell room) => arrivals.add((time + .15, distance[room]! + .2));
+
+    for (var i = 1; i < solution.length; i++) {
+      // The clock starts at the first swipe, so that one takes no thought.
+      if (i > 1 && _swipeBefore(i, straight: true)) {
+        time += thinkingTime + .05;
+        arrive(solution[i - 1]); // Still safe when it finishes thinking.
+      }
+      time += 1 / EscapeGame.runnerSpeed;
+      arrive(solution[i]);
+    }
+    time += thinkingTime + .05;
+    arrive(exit);
+    var speed = EscapeGame.speedFor(number);
+    for (final (at, rooms) in arrivals) {
+      if (at > shortestLead) speed = min(speed, rooms / (at - shortestLead));
+    }
+    speed = max(speed, min(slowest, EscapeGame.speedFor(number)));
+    var lead = shortestLead;
+    for (final (at, rooms) in arrivals) {
+      lead = max(lead, at - rooms / speed);
+    }
+    return (speed: speed, lead: lead);
+  }
+
   double get _baseDelay => 4.0 - 2.5 * gradeOf(number);
   double get thinkingTime => .95 - .55 * gradeOf(number);
 
@@ -221,6 +259,27 @@ class EscapeMaze {
   }
 
   static final _cache = <int, EscapeMaze>{};
+  static final _claimed = <int>{};
+
+  /// Whether a background build of this level should start: false once it is
+  /// built or already on its way.
+  static bool claim(int number) =>
+      !_cache.containsKey(number) && _claimed.add(number);
+
+  /// Keeps a level built elsewhere.
+  static void remember(EscapeMaze maze) =>
+      _cache.putIfAbsent(maze.number, () => maze);
+
+  /// The level with its timings already worked out, ready to hand over from
+  /// a background isolate.
+  static EscapeMaze prepared(int number) {
+    final maze = EscapeMaze.level(number);
+    maze.solution;
+    maze.minimumSwipes;
+    maze.hunterDelay;
+    maze.stalking;
+    return maze;
+  }
 
   /// Every level has its own silhouette and architectural cuts. Five
   /// corridor recipes vary independently; restarting keeps the same layout.
@@ -415,8 +474,8 @@ enum EscapeState { playing, escaped, caught }
 /// snake follows the shortest way to it. Positions are in cells and move
 /// smoothly between rooms.
 class EscapeGame extends ChangeNotifier {
-  EscapeGame({this.unlockAll}) {
-    _load(1);
+  EscapeGame({this.unlockAll, int initialLevel = 1}) {
+    _load(initialLevel);
   }
 
   // Null follows GameSettings.unlockAllLevelsForTesting.
@@ -459,11 +518,19 @@ class EscapeGame extends ChangeNotifier {
   static const runnerSpeed = 9.0; // rooms per second while sliding
 
   /// Rooms per second the snake moves, quicker on later levels.
-  double get snakeSpeed => speedFor(maze.number);
+  double get snakeSpeed =>
+      _firstSwipeAt == null ? speedFor(maze.number) : maze.stalking.speed;
   static double speedFor(int number) => 2.0 + 1.6 * EscapeMaze.gradeOf(number);
 
-  /// Time to inspect this maze before its hunter starts moving.
-  double get hunterHeadStart => maze.hunterDelay;
+  /// When the hunter starts moving: just after the runner's first swipe, or
+  /// after the time allowed to inspect the maze if the runner stays put.
+  double get hunterHeadStart {
+    final first = _firstSwipeAt;
+    return first == null ? maze.hunterDelay : first + maze.stalking.lead;
+  }
+
+  /// When the runner first swiped, if the hunter was still waiting then.
+  double? _firstSwipeAt;
 
   bool get isOver => state != EscapeState.playing;
   int get totalStars => stars.values.fold(0, (sum, v) => sum + v);
@@ -491,6 +558,7 @@ class EscapeGame extends ChangeNotifier {
     state = EscapeState.playing;
     hints = 3;
     moves = 0;
+    _firstSwipeAt = null;
     runnerCell = maze.runner;
     runnerAt = _point(runnerCell);
     _runnerPath.clear();
@@ -512,6 +580,7 @@ class EscapeGame extends ChangeNotifier {
     runnerDistance = 0;
     hunterDistance = 0;
     runnerLastMovedAt = -1000;
+    LevelPreload.maze(number + 1);
   }
 
   static Offset _point(Cell c) => Offset(c.x.toDouble(), c.y.toDouble());
@@ -532,6 +601,7 @@ class EscapeGame extends ChangeNotifier {
       return false;
     }
     moves++;
+    if (moves == 1 && _clock <= maze.hunterDelay) _firstSwipeAt = _clock;
     hintDirection = null;
     facing = d;
     if (d.dx != 0) runnerLookingLeft = d.dx < 0;

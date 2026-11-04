@@ -117,6 +117,30 @@ class FrameStyle {
   final Color accent;
   final FrameLook look;
 
+  /// The same colours and trim with another header.
+  FrameStyle withHeader(
+    FrameShape shape,
+    HeaderLayout layout, {
+    Color? board,
+  }) => FrameStyle(
+    shape: shape,
+    layout: layout,
+    ornament: ornament,
+    board: board ?? this.board,
+    boardDark: boardDark,
+    trim: trim,
+    stripe: stripe,
+    ground: ground,
+    groundDark: groundDark,
+    accent: accent,
+    look: look,
+  );
+
+  /// How many shared footer scenes levels take turns with, as drawn by the
+  /// footer: stones, hedge, dock, hills, wattle, bamboo, flowers, grass,
+  /// pebbles and bare ground.
+  static const footerScenes = 10;
+
   // The opening five.
   static const wood = FrameStyle(
     shape: FrameShape.wood,
@@ -249,16 +273,21 @@ class MazeFooterFrame extends StatelessWidget {
     required this.style,
     required this.child,
     this.plain = false,
+    this.scene,
   });
   final FrameStyle style;
   final Widget child;
+
+  /// Which shared footer scene to draw; null keeps the world's own footer.
+  final int? scene;
 
   /// Leaves out the band, so the controls stand on the screen itself.
   final bool plain;
 
   @override
-  Widget build(BuildContext context) =>
-      plain ? child : CustomPaint(painter: _FooterPainter(style), child: child);
+  Widget build(BuildContext context) => plain
+      ? child
+      : CustomPaint(painter: _FooterPainter(style, scene), child: child);
 }
 
 /// A round control made of the style's material: a wooden disc, a painted
@@ -509,14 +538,8 @@ class _HeaderPainter extends CustomPainter {
         if (ropes) _hangingRopes(canvas, size, style.trim);
         _shadow(canvas, board);
         canvas.drawRRect(board, Paint()..color = style.board);
-        // Two slats with a gap, like the side of a crate.
         canvas.save();
         canvas.clipRRect(board);
-        final mid = board.outerRect.center.dy;
-        canvas.drawRect(
-          Rect.fromLTWH(0, mid - 1.5, size.width, 3),
-          Paint()..color = style.trim,
-        );
         _woodGrain(canvas, board, style.boardDark);
         canvas.restore();
         canvas.drawRRect(
@@ -588,13 +611,18 @@ class _HeaderPainter extends CustomPainter {
 }
 
 class _FooterPainter extends CustomPainter {
-  const _FooterPainter(this.style);
+  const _FooterPainter(this.style, this.scene);
   final FrameStyle style;
+  final int? scene;
 
   @override
   void paint(Canvas canvas, Size size) {
     // The band sits behind the lower half of the controls.
     final top = size.height * .42;
+    if (scene case final shared?) {
+      _sceneFooter(canvas, size, top, shared);
+      return;
+    }
     final band = Rect.fromLTWH(
       -16,
       top,
@@ -604,7 +632,7 @@ class _FooterPainter extends CustomPainter {
     final o = style.ornament;
     switch (style.shape) {
       case FrameShape.wood:
-        // A fallen log with trim along the top and rings at each end.
+        // A fallen log with trim along the top.
         final log = RRect.fromRectAndRadius(
           Rect.fromLTWH(0, top, size.width, size.height * .5),
           Radius.circular(size.height * .25),
@@ -626,27 +654,6 @@ class _FooterPainter extends CustomPainter {
             Offset(x + 16, log.bottom - 12),
             bark,
           );
-        }
-        for (final x in [
-          log.left + log.height * .3,
-          log.right - log.height * .3,
-        ]) {
-          final end = Offset(x, log.outerRect.center.dy);
-          canvas.drawCircle(
-            end,
-            log.height * .3,
-            Paint()..color = style.look.face,
-          );
-          for (var r = 4.0; r < log.height * .3; r += 5) {
-            canvas.drawCircle(
-              end,
-              r,
-              Paint()
-                ..color = Color.lerp(style.look.face, style.look.rim, .4)!
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 1,
-            );
-          }
         }
         for (var x = log.left + 20; x < log.right - 20; x += 10) {
           canvas.drawCircle(
@@ -692,41 +699,7 @@ class _FooterPainter extends CustomPainter {
           Paint()..color = style.trim,
         );
       case FrameShape.crate:
-        // A picket fence on a strip of the world's ground.
-        final fence = Paint()..color = style.ground;
-        final edge = Paint()
-          ..color = style.groundDark
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5;
-        for (final y in [top + 16, top + 40]) {
-          final rail = Rect.fromLTWH(0, y, size.width, 8);
-          canvas.drawRect(rail, fence);
-          canvas.drawRect(rail, edge);
-        }
-        for (var x = 6.0; x < size.width; x += 22) {
-          final picket = Path()
-            ..moveTo(x, top + 70)
-            ..lineTo(x, top + 6)
-            ..lineTo(x + 7, top - 4)
-            ..lineTo(x + 14, top + 6)
-            ..lineTo(x + 14, top + 70)
-            ..close();
-          canvas.drawPath(picket, fence);
-          canvas.drawPath(picket, edge);
-        }
-        canvas.drawRect(
-          Rect.fromLTWH(-16, size.height - 18, size.width + 32, 60),
-          Paint()..color = style.stripe,
-        );
-        for (var i = 0; i * 54.0 + 30 < size.width; i++) {
-          _ornament(
-            canvas,
-            Offset(30 + i * 54.0, size.height - 10),
-            6,
-            o,
-            i + 3,
-          );
-        }
+        _sceneFooter(canvas, size, top, scene ?? 0);
       case FrameShape.driftwood:
         // A shoreline: the footer ground under a foamy wave line.
         Path waveLine() {
@@ -801,8 +774,509 @@ class _FooterPainter extends CustomPainter {
     }
   }
 
+  // A shared scene standing on a strip of the world's ground.
+  void _sceneFooter(Canvas canvas, Size size, double top, int shared) {
+    switch (shared) {
+      case 6:
+        _flowerBed(canvas, size, top);
+        return;
+      case 7:
+        _tallGrass(canvas, size, top);
+        return;
+      case 8:
+        _pebbles(canvas, size, top);
+        return;
+      case 9:
+        // Nothing at all: the controls stand on the screen.
+        return;
+      case 0:
+        _stoneWall(canvas, size, top);
+      case 1:
+        _hedge(canvas, size, top);
+      case 2:
+        _dock(canvas, size, top);
+      case 3:
+        _hills(canvas, size, top);
+      case 4:
+        _wattle(canvas, size, top);
+      default:
+        _bambooFence(canvas, size, top);
+    }
+    canvas.drawRect(
+      Rect.fromLTWH(-16, size.height - 18, size.width + 32, 60),
+      Paint()
+        ..color = style.shape == FrameShape.crate ? style.stripe : style.ground,
+    );
+    for (var i = 0; i * 54.0 + 30 < size.width; i++) {
+      _ornament(
+        canvas,
+        Offset(30 + i * 54.0, size.height - 10),
+        6,
+        style.ornament,
+        i + 3,
+      );
+    }
+  }
+
+  // A soft strip of earth along the bottom for the open scenes to stand on.
+  double _softGround(Canvas canvas, Size size, Color colour) {
+    final y = size.height - 22;
+    final ground = Path()..moveTo(-8, size.height + 8);
+    for (var x = -8.0; x <= size.width + 8; x += 6) {
+      ground.lineTo(x, y + math.sin(x / 34) * 3);
+    }
+    ground
+      ..lineTo(size.width + 8, size.height + 8)
+      ..close();
+    canvas.drawPath(ground, Paint()..color = colour);
+    return y;
+  }
+
+  // Loose flowers of many colours on slender stems.
+  void _flowerBed(Canvas canvas, Size size, double top) {
+    const petals = [
+      Color(0xFFF2638A),
+      Color(0xFFFFC83D),
+      Color(0xFFF7F3E8),
+      Color(0xFFB287E8),
+      Color(0xFFFF8A4C),
+    ];
+    final ground = _softGround(
+      canvas,
+      size,
+      Color.lerp(_leaf, style.ground, .35)!,
+    );
+    final stem = Paint()
+      ..color = Color.lerp(_leaf, Colors.black, .18)!
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    final fill = Paint();
+    var i = 0;
+    for (var x = 8.0; x < size.width; x += 17, i++) {
+      final foot = Offset(x, ground + 6 + (i % 3) * 3);
+      final head = foot + Offset(math.sin(i * 1.9) * 4, -24 - (i % 4) * 7.0);
+      canvas.drawLine(foot, head, stem);
+      canvas.drawLine(
+        foot + (head - foot) * .45,
+        foot + (head - foot) * .45 + Offset(i.isEven ? 6 : -6, -3),
+        stem,
+      );
+      final r = 3.0 + (i % 2);
+      fill.color = petals[i % petals.length];
+      for (var k = 0; k < 5; k++) {
+        canvas.drawCircle(
+          head + Offset.fromDirection(k * 2 * math.pi / 5 + i, r),
+          r * .8,
+          fill,
+        );
+      }
+      fill.color = i % petals.length == 1
+          ? const Color(0xFFB9651F)
+          : const Color(0xFFFFD84D);
+      canvas.drawCircle(head, r * .6, fill);
+    }
+  }
+
+  // Tufts of long grass swaying the same way, darker ones behind.
+  void _tallGrass(Canvas canvas, Size size, double top) {
+    final near = Color.lerp(_leaf, style.ground, .22)!;
+    final ground = _softGround(canvas, size, near);
+    final blade = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    for (final (layer, shade, height, step) in [
+      (0, .3, 44.0, 9.0),
+      (1, .12, 34.0, 8.0),
+      (2, -.14, 24.0, 7.0),
+    ]) {
+      blade
+        ..color = shade > 0
+            ? Color.lerp(near, Colors.black, shade)!
+            : Color.lerp(near, Colors.white, -shade)!
+        ..strokeWidth = 2.4 - layer * .2;
+      var i = layer * 11;
+      for (var x = -4.0 + layer * 3; x < size.width + 4; x += step, i++) {
+        final tall = height * (.72 + (math.sin(i * 2.7) + 1) * .17);
+        final lean = 6 + math.sin(i * 1.3) * 5;
+        canvas.drawPath(
+          Path()
+            ..moveTo(x, ground + 8)
+            ..quadraticBezierTo(
+              x + lean * .2,
+              ground + 8 - tall * .6,
+              x + lean,
+              ground + 8 - tall,
+            ),
+          blade,
+        );
+      }
+    }
+  }
+
+  // Scattered pebbles and little ferns on bare earth.
+  void _pebbles(Canvas canvas, Size size, double top) {
+    final earth = Color.lerp(const Color(0xFFC4A373), style.ground, .3)!;
+    final ground = _softGround(canvas, size, earth);
+    final stone = Color.lerp(const Color(0xFFB7AE9C), style.ground, .15)!;
+    final fill = Paint();
+    final frond = Paint()
+      ..color = Color.lerp(_leaf, style.ground, .15)!
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round;
+    var i = 0;
+    for (var x = 14.0; x < size.width; x += 31, i++) {
+      final y = ground + 5 + math.sin(i * 2.1) * 4;
+      if (i % 3 == 1) {
+        for (var k = -2; k <= 2; k++) {
+          canvas.drawPath(
+            Path()
+              ..moveTo(x, y + 4)
+              ..quadraticBezierTo(
+                x + k * 2,
+                y - 8,
+                x + k * 6.5,
+                y - 12 + k.abs() * 3,
+              ),
+            frond,
+          );
+        }
+        continue;
+      }
+      final w = 11 + (math.sin(i * 3.3) + 1) * 5;
+      final pebble = Rect.fromCenter(
+        center: Offset(x, y),
+        width: w,
+        height: w * .62,
+      );
+      canvas.drawOval(
+        pebble.shift(const Offset(0, 2)),
+        fill..color = Colors.black.withValues(alpha: .2),
+      );
+      canvas.drawOval(pebble, fill..color = stone);
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: pebble.center + Offset(-w * .14, -w * .1),
+          width: w * .36,
+          height: w * .16,
+        ),
+        fill..color = Colors.white.withValues(alpha: .5),
+      );
+    }
+  }
+
+  // A dry-stone wall: staggered rounded stones with moss along the top.
+  void _stoneWall(Canvas canvas, Size size, double top) {
+    final tone = Color.lerp(const Color(0xFFB7AE9C), style.ground, .22)!;
+    final edge = Color.lerp(tone, Colors.black, .5)!;
+    final bottom = size.height + 4;
+    final outline = Paint()
+      ..color = edge
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final fill = Paint();
+    canvas.drawRect(
+      Rect.fromLTRB(-8, top + 3, size.width + 8, bottom),
+      fill..color = edge,
+    );
+    var row = 0;
+    for (var y = top; y < bottom; y += 15, row++) {
+      var x = row.isEven ? -10.0 : -24.0;
+      var i = row * 7;
+      while (x < size.width + 8) {
+        final w = 25 + (math.sin(i * 2.3) + 1) * 9;
+        final stone = RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, y, w - 1.5, 14),
+          const Radius.circular(6),
+        );
+        canvas.drawRRect(
+          stone,
+          fill
+            ..color = Color.lerp(
+              tone,
+              Colors.white,
+              (math.sin(i * 1.7) + 1) * .1,
+            )!,
+        );
+        canvas.drawRRect(stone, outline);
+        x += w;
+        i++;
+      }
+    }
+    final moss = Paint()..color = Color.lerp(style.stripe, _leaf, .6)!;
+    for (var x = 4.0; x < size.width; x += 19) {
+      canvas.drawCircle(
+        Offset(x, top + math.sin(x) * 1.5),
+        4 + math.sin(x * 3) * 1.5,
+        moss,
+      );
+    }
+  }
+
+  static const _leaf = Color(0xFF4E8A3A);
+
+  // A clipped hedge, its leaves in layers, with the world's flowers in it.
+  void _hedge(Canvas canvas, Size size, double top) {
+    final base = Color.lerp(_leaf, style.ground, .15)!;
+    final dark = Color.lerp(base, Colors.black, .3)!;
+    final light = Color.lerp(base, Colors.white, .22)!;
+    final bottom = size.height + 4;
+    canvas.drawRect(
+      Rect.fromLTRB(-8, top + 6, size.width + 8, bottom),
+      Paint()..color = dark,
+    );
+    final fill = Paint();
+    for (var x = -4.0; x < size.width + 8; x += 13) {
+      canvas.drawCircle(
+        Offset(x, top + 3 + math.sin(x * .7) * 2),
+        10,
+        fill..color = dark,
+      );
+    }
+    var row = 0;
+    for (var y = top + 7; y < bottom; y += 11, row++) {
+      for (var x = row.isEven ? -2.0 : 5.0; x < size.width + 8; x += 14) {
+        canvas.drawCircle(
+          Offset(x, y + math.sin(x * 1.9) * 2),
+          5.5,
+          fill..color = math.sin(x + y) > 0 ? base : light,
+        );
+      }
+    }
+    for (var i = 0; i * 41.0 + 22 < size.width; i++) {
+      _ornament(
+        canvas,
+        Offset(22 + i * 41.0, top + 8 + (i % 3) * 8),
+        6,
+        style.ornament,
+        i,
+      );
+    }
+  }
+
+  // A plank walkway with posts and a rope handrail sagging between them.
+  void _dock(Canvas canvas, Size size, double top) {
+    final wood = Color.lerp(const Color(0xFFB98A55), style.ground, .2)!;
+    final dark = Color.lerp(wood, Colors.black, .45)!;
+    final light = Color.lerp(wood, Colors.white, .12)!;
+    final bottom = size.height + 4;
+    final deck = top + 12;
+    final fill = Paint();
+    var row = 0;
+    for (var y = deck; y < bottom; y += 13, row++) {
+      canvas.drawRect(
+        Rect.fromLTRB(-8, y, size.width + 8, y + 12),
+        fill..color = row.isEven ? wood : light,
+      );
+      canvas.drawLine(
+        Offset(-8, y + 12.5),
+        Offset(size.width + 8, y + 12.5),
+        Paint()
+          ..color = dark
+          ..strokeWidth = 1,
+      );
+      for (var x = row.isEven ? 30.0 : 62.0; x < size.width; x += 64) {
+        canvas.drawLine(
+          Offset(x, y),
+          Offset(x, y + 12),
+          Paint()
+            ..color = dark
+            ..strokeWidth = 1,
+        );
+        canvas.drawCircle(Offset(x + 4, y + 6), 1.2, fill..color = dark);
+      }
+    }
+    const span = 66.0;
+    final rope = Paint()
+      ..color = dark
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round;
+    for (var x = 2.0; x < size.width; x += span) {
+      canvas.drawPath(
+        Path()
+          ..moveTo(x + 4, top - 6)
+          ..quadraticBezierTo(
+            x + 4 + span / 2,
+            top + 10,
+            x + 4 + span,
+            top - 6,
+          ),
+        rope,
+      );
+    }
+    for (var x = 2.0; x < size.width + span; x += span) {
+      final post = RRect.fromRectAndRadius(
+        Rect.fromLTRB(x, top - 11, x + 8, deck + 7),
+        const Radius.circular(3),
+      );
+      canvas.drawRRect(post, fill..color = wood);
+      canvas.drawRRect(
+        post,
+        Paint()
+          ..color = dark
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+    }
+  }
+
+  // Soft rolling hills, one behind the other, with flowers on the slopes.
+  void _hills(Canvas canvas, Size size, double top) {
+    final near = Color.lerp(_leaf, style.ground, .35)!;
+    final bottom = size.height + 4;
+    for (final (i, shade) in [.34, .17, 0.0].indexed) {
+      final y = top + 2 + i * 12.0;
+      final hill = Path()..moveTo(-8, bottom);
+      for (var x = -8.0; x <= size.width + 8; x += 6) {
+        hill.lineTo(x, y + math.sin(x / (46 - i * 7) + i * 2.1) * (7 - i));
+      }
+      hill
+        ..lineTo(size.width + 8, bottom)
+        ..close();
+      canvas.drawPath(
+        hill,
+        Paint()..color = Color.lerp(near, Colors.white, shade)!,
+      );
+    }
+    for (var i = 0; i * 37.0 + 18 < size.width; i++) {
+      _ornament(
+        canvas,
+        Offset(18 + i * 37.0, top + 20 + (i % 3) * 7),
+        5,
+        style.ornament,
+        i,
+      );
+    }
+  }
+
+  // A woven wattle fence: strands passing in and out of upright stakes.
+  void _wattle(Canvas canvas, Size size, double top) {
+    final wood = Color.lerp(const Color(0xFF9A7446), style.ground, .2)!;
+    final dark = Color.lerp(wood, Colors.black, .5)!;
+    final light = Color.lerp(wood, Colors.white, .18)!;
+    final bottom = size.height + 4;
+    const span = 27.0;
+    final fill = Paint();
+    for (var x = 4.0; x < size.width + span; x += span) {
+      final stake = RRect.fromRectAndRadius(
+        Rect.fromLTRB(x - 3, top - 10, x + 3, bottom),
+        const Radius.circular(3),
+      );
+      canvas.drawRRect(stake, fill..color = dark);
+    }
+    var row = 0;
+    for (var y = top; y < bottom; y += 7.5, row++) {
+      final strand = Path()..moveTo(-8, y);
+      for (var x = -8.0; x <= size.width + 8; x += 3) {
+        final wave = math.sin((x - 4) / span * math.pi + row * math.pi);
+        strand.lineTo(x, y + wave * 1.8);
+      }
+      canvas.drawPath(
+        strand,
+        Paint()
+          ..color = dark
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 7,
+      );
+      canvas.drawPath(
+        strand,
+        Paint()
+          ..color = row.isEven ? wood : light
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5,
+      );
+    }
+    for (var x = 4.0; x < size.width + span; x += span) {
+      canvas.drawCircle(Offset(x, top - 10), 3.5, fill..color = light);
+      canvas.drawCircle(Offset(x, top - 10), 1.6, fill..color = dark);
+    }
+  }
+
+  // Upright canes with cut, hollow tops, held by two rails and rope lashings.
+  void _bambooFence(Canvas canvas, Size size, double top) {
+    const light = Color(0xFFF0D98C),
+        cane = Color(0xFFD8B95F),
+        dark = Color(0xFF9C7C2E),
+        edge = Color(0xFF6E5620),
+        rope = Color(0xFF7A4A22);
+    const width = 13.0, gap = 14.5;
+    final bottom = size.height + 4;
+    final stroke = Paint()
+      ..color = edge
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final fill = Paint();
+
+    var i = 0;
+    for (var x = -6.0; x < size.width + 6; x += gap, i++) {
+      final tip = top - 6 + const [0.0, 5.0, 2.0, 7.0, 1.0][i % 5];
+      final body = Rect.fromLTRB(x, tip, x + width, bottom);
+      canvas.drawRect(body, fill..color = cane);
+      canvas.drawRect(
+        Rect.fromLTRB(x + 2.5, tip, x + 5.5, bottom),
+        fill..color = light,
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x + width - 3.5, tip, x + width, bottom),
+        fill..color = dark,
+      );
+      canvas.drawRect(body, stroke);
+      // The ringed joints, staggered from cane to cane.
+      for (var y = tip + 13 + (i % 3) * 5; y < bottom; y += 21) {
+        canvas.drawLine(
+          Offset(x, y),
+          Offset(x + width, y),
+          Paint()
+            ..color = edge
+            ..strokeWidth = 1.6,
+        );
+      }
+      // The cut top shows the hollow inside.
+      final cut = Rect.fromLTRB(x, tip - 2.5, x + width, tip + 2.5);
+      canvas.drawOval(cut, fill..color = light);
+      canvas.drawOval(cut.deflate(2.2), fill..color = edge);
+      canvas.drawOval(cut, stroke);
+    }
+
+    for (final y in [top + 13, top + 31]) {
+      final rail = Rect.fromLTWH(-8, y, size.width + 16, 7);
+      canvas.drawRect(rail, fill..color = cane);
+      canvas.drawRect(
+        Rect.fromLTWH(-8, y + 1.5, size.width + 16, 1.6),
+        fill..color = light,
+      );
+      canvas.drawRect(rail, stroke);
+      for (var x = 40.0; x < size.width; x += 68) {
+        canvas.drawLine(
+          Offset(x, y),
+          Offset(x, y + 7),
+          Paint()
+            ..color = edge
+            ..strokeWidth = 1.4,
+        );
+      }
+      // Rope lashed round the rail at every third cane.
+      final ties = Paint()
+        ..color = rope
+        ..strokeWidth = 1.5
+        ..strokeCap = StrokeCap.round;
+      for (var x = -6.0 + gap * 2; x < size.width; x += gap * 3) {
+        for (var k = 0; k < 3; k++) {
+          final dx = x + 3 + k * 3.2;
+          canvas.drawLine(
+            Offset(dx - 2, y - 1.5),
+            Offset(dx + 2, y + 8.5),
+            ties,
+          );
+        }
+      }
+    }
+  }
+
   @override
-  bool shouldRepaint(covariant _FooterPainter old) => old.style != style;
+  bool shouldRepaint(covariant _FooterPainter old) =>
+      old.style != style || old.scene != scene;
 }
 
 void _cactus(Canvas canvas, Offset base) {

@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../config/game_settings.dart';
+import 'level_preload.dart';
 import 'puzzle_rules.dart';
 export 'puzzle_rules.dart';
 
@@ -289,6 +290,7 @@ class PuzzleGame extends ChangeNotifier {
     secondsLeft.value = timeLimit;
     highlightedId = null;
     highlightedTargetId = null;
+    LevelPreload.puzzle(number + 1, mode);
   }
 
   @override

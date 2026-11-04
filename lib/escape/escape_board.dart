@@ -352,8 +352,19 @@ class _EscapePainter extends CustomPainter {
     final hunterCenter = hunter;
     final caught = game.state == EscapeState.caught;
     final lunge = caught ? math.sin(math.min(t / .35, 1) * math.pi) : 0.0;
-    final faceRadius = math.max(cell * .62, 11.0);
+    // Tokens sit inside a corridor, trimmed like the level's buttons. In the
+    // densest mazes they keep a size that shows the face, over the walls.
+    final faceRadius = math.max(cell * .43, 14.0);
+    final faceEdge = Colors.black.withValues(alpha: .45);
+    final faceRim =
+        MazeDecor.forLevel(maze.number)?.frame.look.face ?? Colors.white;
+    const faceShare = .8;
     void drawHunter() {
+      // The snake always comes whole, its long body winding along the path.
+      if (maze.hunter == AnimalKind.snake) {
+        _drawSnake(canvas, cell, at, game.clock + t);
+        return;
+      }
       if (CharacterArt.drawFace(
         canvas,
         // A waiting hunter stays whole beside the left-edge gate.
@@ -362,6 +373,9 @@ class _EscapePainter extends CustomPainter {
         maze.hunter.name,
         _danger,
         flip: game.hunterLookingLeft,
+        rim: faceRim,
+        faceShare: faceShare,
+        edge: faceEdge,
       )) {
         return;
       }
@@ -378,7 +392,6 @@ class _EscapePainter extends CustomPainter {
         motionPhase: game.hunterDistance / 1.1,
       );
       if (!hunterDrawn) {
-        if (maze.hunter == AnimalKind.snake) _drawSnake(canvas, cell, at);
         _roleDisc(canvas, hunterCenter, portraitRadius, _danger);
         drawMazeAnimal(
           canvas,
@@ -434,6 +447,9 @@ class _EscapePainter extends CustomPainter {
           character.name,
           _exitGreen,
           flip: game.runnerLookingLeft,
+          rim: faceRim,
+          faceShare: faceShare,
+          edge: faceEdge,
         ) ||
         CharacterArt.drawActor(
           canvas,
@@ -735,84 +751,141 @@ class _EscapePainter extends CustomPainter {
 
   // The snake: a striped body along its recent trail, about three rooms
   // long, and a head with eyes facing where it goes.
-  void _drawSnake(Canvas canvas, double cell, Offset Function(Offset) at) {
+  // A long patterned snake: it waits coiled, then its body unwinds along the
+  // corridors behind its head, thin at the tail and swaying a little.
+  void _drawSnake(
+    Canvas canvas,
+    double cell,
+    Offset Function(Offset) at,
+    double wave,
+  ) {
+    const bodyRooms = 4.0, coilArm = .2 * 2 * math.pi;
+    // In a dense maze the body keeps a size that still reads as a snake.
+    final girth = math.max(cell, 26.0);
     final points = [...game.trail, game.snakeAt];
-    // Keep only the last stretch of the trail.
-    final body = <Offset>[points.last];
+    // A gate on the board's edge must not cut the coil or the tail off.
+    Offset onBoard(Offset p) {
+      final spot = at(p);
+      return Offset(math.max(spot.dx, cell * .42), spot.dy);
+    }
+
+    final spine = <Offset>[onBoard(points.last)];
     var length = 0.0;
-    for (var i = points.length - 2; i >= 0 && length < 3; i--) {
+    for (var i = points.length - 2; i >= 0 && length < bodyRooms; i--) {
       length += (points[i] - points[i + 1]).distance;
-      body.insert(0, points[i]);
+      spine.insert(0, onBoard(points[i]));
     }
+    // Whatever has not left yet stays coiled round the end of the trail.
     final path = Path();
-    for (var i = 0; i < body.length; i++) {
-      final p = at(body[i]);
-      i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
-    }
-    final stroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawPath(
-      path,
-      stroke
-        ..color = const Color(0xFF2E6B2F)
-        ..strokeWidth = cell * .4,
-    );
-    canvas.drawPath(
-      path,
-      stroke
-        ..color = const Color(0xFF6DBE45)
-        ..strokeWidth = cell * .28,
-    );
-    // Yellow bands along the back.
-    for (final metric in path.computeMetrics()) {
-      for (var d = cell * .3; d < metric.length - cell * .3; d += cell * .45) {
-        final tangent = metric.getTangentForOffset(d);
-        if (tangent == null) continue;
-        canvas.drawCircle(
-          tangent.position,
-          cell * .07,
-          Paint()..color = const Color(0xFFE3D45A),
-        );
+    final turns = math.min(2.0, math.max(0.0, bodyRooms - length) / coilArm);
+    if (turns > .05) {
+      final centre = spine.first;
+      final steps = (turns * 16).ceil();
+      for (var i = 0; i <= steps; i++) {
+        final f = i / steps;
+        final spot =
+            centre +
+            Offset.fromDirection(
+              f * turns * 2 * math.pi + 2.4,
+              girth * .34 * (1 - f) * math.min(1.0, turns),
+            );
+        i == 0 ? path.moveTo(spot.dx, spot.dy) : path.lineTo(spot.dx, spot.dy);
+      }
+      for (final p in spine.skip(1)) {
+        path.lineTo(p.dx, p.dy);
+      }
+    } else {
+      path.moveTo(spine.first.dx, spine.first.dy);
+      for (final p in spine.skip(1)) {
+        path.lineTo(p.dx, p.dy);
       }
     }
-    final head = at(game.snakeAt);
-    var facing = body.length > 1
-        ? body.last - body[body.length - 2]
-        : const Offset(1, 0);
+    final metric = path.computeMetrics().firstOrNull;
+    final samples = <(Offset, double)>[];
+    if (metric != null && metric.length > 0) {
+      final step = math.max(1.5, cell * .07);
+      for (var d = 0.0; d < metric.length; d += step) {
+        final tangent = metric.getTangentForOffset(d)!;
+        final f = d / metric.length;
+        final side = Offset(-tangent.vector.dy, tangent.vector.dx);
+        final sway = math.sin(d / cell * 3 - wave * 4) * girth * .05 * (1 - f);
+        samples.add((
+          tangent.position + side * sway,
+          girth * (.045 + .1 * math.min(1.0, f / .55)),
+        ));
+      }
+    }
+    // Dark edge first, so the whole body reads against any ground.
+    final paint = Paint()..color = const Color(0xFF1F3D1C);
+    for (final (spot, radius) in samples) {
+      canvas.drawCircle(spot, radius + girth * .022, paint);
+    }
+    paint.color = const Color(0xFF5E9B3C);
+    for (final (spot, radius) in samples) {
+      canvas.drawCircle(spot, radius, paint);
+    }
+    // Pale diamonds along the back.
+    final every = math.max(1, (cell * .34 / math.max(1.5, cell * .07)).round());
+    paint.color = const Color(0xFFE6D98A);
+    for (var i = every ~/ 2; i < samples.length - 2; i += every) {
+      final (spot, radius) = samples[i];
+      final size = radius * .55;
+      canvas.drawPath(
+        Path()
+          ..moveTo(spot.dx, spot.dy - size)
+          ..lineTo(spot.dx + size, spot.dy)
+          ..lineTo(spot.dx, spot.dy + size)
+          ..lineTo(spot.dx - size, spot.dy)
+          ..close(),
+        paint,
+      );
+    }
+    // The head points the way it is going, its tongue flicking now and then.
+    var facing = game.hunterHeading;
     if (facing.distance == 0) facing = const Offset(1, 0);
-    facing /= facing.distance;
-    final side = Offset(-facing.dy, facing.dx);
-    canvas.drawCircle(
+    final h = girth * .22;
+    canvas.save();
+    canvas.translate(spine.last.dx, spine.last.dy);
+    canvas.rotate(facing.direction);
+    if (math.sin(wave * 5) > -.2) {
+      canvas.drawPath(
+        Path()
+          ..moveTo(h * 1.2, 0)
+          ..lineTo(h * 1.85, 0)
+          ..lineTo(h * 2.2, -h * .28)
+          ..moveTo(h * 1.85, 0)
+          ..lineTo(h * 2.2, h * .28),
+        Paint()
+          ..color = _danger
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = math.max(1.0, girth * .035)
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+    final head = Path()
+      ..moveTo(-h * .9, -h * .55)
+      ..quadraticBezierTo(h * .1, -h * 1.15, h * .85, -h * .5)
+      ..quadraticBezierTo(h * 1.35, 0, h * .85, h * .5)
+      ..quadraticBezierTo(h * .1, h * 1.15, -h * .9, h * .55)
+      ..close();
+    canvas.drawPath(
       head,
-      cell * .27,
-      Paint()..color = const Color(0xFF2E6B2F),
+      Paint()
+        ..color = const Color(0xFF1F3D1C)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = girth * .044
+        ..strokeJoin = StrokeJoin.round,
     );
-    canvas.drawCircle(
-      head + facing * cell * .03,
-      cell * .22,
-      Paint()..color = const Color(0xFF5BAE3A),
-    );
+    canvas.drawPath(head, Paint()..color = const Color(0xFF6DAE45));
     for (final s in [-1.0, 1.0]) {
-      final eye = head + facing * cell * .08 + side * cell * .11 * s;
-      canvas.drawCircle(eye, cell * .065, Paint()..color = Colors.white);
-      canvas.drawCircle(
-        eye + facing * cell * .02,
-        cell * .035,
+      final eye = Offset(h * .3, s * h * .52);
+      canvas.drawCircle(eye, h * .27, Paint()..color = const Color(0xFFFFD84D));
+      canvas.drawOval(
+        Rect.fromCenter(center: eye, width: h * .32, height: h * .12),
         Paint()..color = ink,
       );
     }
-    // A flicking tongue.
-    final tongue = head + facing * cell * .27;
-    canvas.drawLine(
-      tongue,
-      tongue + facing * cell * .14,
-      Paint()
-        ..color = _danger
-        ..strokeWidth = cell * .04
-        ..strokeCap = StrokeCap.round,
-    );
+    canvas.restore();
   }
 
   @override

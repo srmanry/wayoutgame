@@ -457,7 +457,23 @@ class PuzzleLevel {
 
   static Direction opposite(Direction d) => Direction.values[(d.index + 2) % 4];
 
-  factory PuzzleLevel.generate(int number, {GameMode mode = GameMode.basic}) {
+  static final _built = <(int, GameMode), PuzzleLevel>{};
+  static final _claimed = <(int, GameMode)>{};
+
+  /// A number and mode always give the same board, so each is built once.
+  factory PuzzleLevel.generate(int number, {GameMode mode = GameMode.basic}) =>
+      _built[(number, mode)] ??= _build(number, mode);
+
+  /// Whether a background build of this level should start: false once it is
+  /// built or already on its way.
+  static bool claim(int number, GameMode mode) =>
+      !_built.containsKey((number, mode)) && _claimed.add((number, mode));
+
+  /// Keeps a level built elsewhere.
+  static void remember(PuzzleLevel level, GameMode mode) =>
+      _built[(level.number, mode)] ??= level;
+
+  static PuzzleLevel _build(int number, GameMode mode) {
     assert(number >= 1 && number <= count);
     final size = columnsFor(number);
     final rows = rowsFor(size);

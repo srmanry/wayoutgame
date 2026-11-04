@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'game_settings.dart';
+
 /// Saved progress for each game kept on the device: the last level played,
 /// the furthest level unlocked and the stars earned, plus a few choices.
 /// Before [init] (as in tests) it reads nothing and saves nothing.
@@ -30,6 +32,16 @@ class ProgressStore {
           if (_starEntry(entry) case final (int, int) pair) pair.$1: pair.$2,
       },
     );
+  }
+
+  /// The level a game should open on: the saved one if it can be played.
+  static int startLevel(String game, int count) {
+    final saved = load(game);
+    if (saved == null || saved.level < 1 || saved.level > count) return 1;
+    return GameSettings.unlockAllLevelsForTesting ||
+            saved.level <= saved.unlocked
+        ? saved.level
+        : 1;
   }
 
   static void save(

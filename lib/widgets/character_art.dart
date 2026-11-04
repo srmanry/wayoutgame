@@ -81,6 +81,9 @@ class CharacterArt {
     String character,
     ui.Color ring, {
     bool flip = false,
+    ui.Color rim = const ui.Color(0xFFFFFFFF),
+    double faceShare = .76,
+    ui.Color? edge,
   }) {
     final atlas = _walk;
     final slot = _slots[character];
@@ -90,13 +93,12 @@ class CharacterArt {
       radius,
       ui.Paint()..color = const ui.Color(0x40000000),
     );
-    canvas.drawCircle(
-      center,
-      radius,
-      ui.Paint()..color = const ui.Color(0xFFFFFFFF),
-    );
+    if (edge != null) {
+      canvas.drawCircle(center, radius + 1, ui.Paint()..color = edge);
+    }
+    canvas.drawCircle(center, radius, ui.Paint()..color = rim);
     canvas.drawCircle(center, radius * .9, ui.Paint()..color = ring);
-    final inner = radius * .76;
+    final inner = radius * faceShare;
     canvas.drawCircle(
       center,
       inner,

@@ -22,8 +22,8 @@ void main() {
             await precacheImage(
               AssetImage(
                 level == 8
-                    ? 'assets/maze/natural_grass.png'
-                    : 'assets/maze/city_rooftop.png',
+                    ? 'assets/maze/natural_grass.jpg'
+                    : 'assets/maze/city_rooftop.jpg',
               ),
               tester.element(find.byType(EscapeBoard)),
             );
