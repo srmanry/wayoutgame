@@ -13,6 +13,7 @@ import '../escape/maze_palette.dart';
 import '../escape/maze_theme.dart';
 import '../game/puzzle.dart';
 import '../config/game_settings.dart';
+import '../config/game_sounds.dart';
 import '../config/progress_store.dart';
 // Restore this import when enabling the competition button below.
 // import '../multiplayer/competition_screen.dart';
@@ -247,6 +248,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       // The result card already says well done; confetti joins it.
       if (result == MoveResult.cleared && game.isComplete) {
         _celebrate(banner: false);
+        if (!game.isRescue) GameSounds.levelClear();
       }
     });
   }
@@ -314,24 +316,163 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     }
     final restart = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Start fresh?'),
-        content: const Text(
-          'Your moves in this level will be reset. You’ll get three lives and three hints again.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep playing'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Restart'),
+      barrierColor: Colors.black.withValues(alpha: .35),
+      builder: (context) => game.isRescue
+          ? _rescueRestartDialog(context)
+          : AlertDialog(
+              title: const Text('Start fresh?'),
+              content: const Text(
+                'Your moves in this level will be reset. You’ll get three lives and three hints again.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Keep playing'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Restart'),
+                ),
+              ],
+            ),
+    );
+    if (restart == true && mounted) _restart();
+  }
+
+  // Animal Rescue's restart question, in the warm card and chunky buttons of
+  // its own controls.
+  Widget _rescueRestartDialog(BuildContext context) {
+    Widget refill(IconData icon, Color color, String label) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFF1D9C2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: _sunInk,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),
     );
-    if (restart == true && mounted) _restart();
+    return Dialog(
+      backgroundColor: const Color(0xFFFFF7EE),
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+        side: const BorderSide(color: Color(0xFFF3D3B4), width: 1.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: _sun.withValues(alpha: .14),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.refresh_rounded,
+                color: _sunShade,
+                size: 36,
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Start fresh?',
+              style: TextStyle(
+                color: _sunInk,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your moves in this level will be reset, and you get everything back:',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _sunInk.withValues(alpha: .72),
+                fontSize: 14,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                refill(
+                  Icons.favorite_rounded,
+                  const Color(0xFFE5484D),
+                  '3 lives',
+                ),
+                refill(Icons.lightbulb_rounded, _sun, '3 hints'),
+              ],
+            ),
+            const SizedBox(height: 20),
+            GameButton(
+              color: _sun,
+              shade: _sunShade,
+              radius: 18,
+              depth: 3,
+              onTap: () => Navigator.pop(context, true),
+              child: const SizedBox(
+                height: 50,
+                width: double.infinity,
+                child: Center(
+                  child: Text(
+                    'Restart',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            GameButton(
+              color: Colors.white,
+              shade: const Color(0xFFE8C9AE),
+              radius: 18,
+              depth: 3,
+              onTap: () => Navigator.pop(context, false),
+              child: const SizedBox(
+                height: 46,
+                width: double.infinity,
+                child: Center(
+                  child: Text(
+                    'Keep playing',
+                    style: TextStyle(
+                      color: _sunInk,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _showHelp() => showDialog<void>(
@@ -687,24 +828,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         ),
         const SizedBox(width: 2),
       ],
-      // Animal Rescue keeps its header to the back arrow and the title.
-      if (!_rescueLook) ...[
-        Container(
-          // A bare icon needs no box round it, so it sits close to the arrow.
-          width: _escaping ? 26 : 42,
+      // Arrow Escape and Animal Rescue keep their header to the back arrow and
+      // the title; Maze Escape shows its icon bare, in the maze's own colour.
+      if (_escaping) ...[
+        SizedBox(
+          width: 26,
           height: 42,
-          // Maze escape shows its icon bare, in the maze's own colour.
-          decoration: _escaping
-              ? null
-              : BoxDecoration(
-                  color: accent,
-                  borderRadius: BorderRadius.circular(13),
-                ),
-          child: Icon(
-            _view.icon,
-            color: _escaping ? _mazePalette.accent : Colors.white,
-            size: 26,
-          ),
+          child: Icon(_view.icon, color: _mazePalette.accent, size: 26),
         ),
         const SizedBox(width: 8),
       ],
@@ -1079,7 +1209,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             final aspect = (game.level.size + 1) / (game.level.rows + 1);
             // The rescue card's chips, thicker border and progress bar add
             // a little more.
-            final around = _rescueLook ? 126.0 : 112.0;
+            // A bar with bigger animal tokens takes its extra height too.
+            final around =
+                (_rescueLook ? 126.0 : 112.0) + _TimeBar.iconFor(game) - 18;
             final cardWidth = math.min(
               constraints.maxWidth,
               math.max(
@@ -1986,6 +2118,35 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       mainAxisSize: MainAxisSize.min,
       children: _escapeResult(run, won, last, resultColor, heading, body),
     );
+    if (decor != null && run.maze.number == 115) {
+      // Level 115 tries a compact card over the dimmed maze instead of a
+      // panel covering the whole board.
+      final rim = look!.rim;
+      return ColoredBox(
+        color: Colors.black.withValues(alpha: .3),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(18),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 340),
+              padding: const EdgeInsets.fromLTRB(22, 24, 22, 22),
+              decoration: BoxDecoration(
+                color: Color.lerp(rim, Colors.white, .93),
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(color: rim, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color.lerp(rim, Colors.black, .35)!,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: content,
+            ),
+          ),
+        ),
+      );
+    }
     if (decor != null) {
       // A dressed level shows its result on a panel of its own material.
       return Padding(
@@ -2050,16 +2211,24 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               ? resultColor.withValues(alpha: .09)
               : Colors.white.withValues(alpha: .85),
           shape: BoxShape.circle,
+          border: run.maze.number == 115 && decor != null
+              ? Border.all(color: resultColor.withValues(alpha: .35), width: 2)
+              : null,
         ),
-        child: Icon(
-          _paused
-              ? Icons.coffee_rounded
-              : won
-              ? Icons.emoji_events_rounded
-              : Icons.favorite_border_rounded,
-          color: resultColor,
-          size: 38,
-        ),
+        // On level 115 the snake that caught you looks back at you.
+        child: run.maze.number == 115 && !won && !_paused && CharacterArt.ready
+            ? CustomPaint(
+                painter: _FacePainter(run.maze.hunter.name, MazePalette.hunter),
+              )
+            : Icon(
+                _paused
+                    ? Icons.coffee_rounded
+                    : won
+                    ? Icons.emoji_events_rounded
+                    : Icons.favorite_border_rounded,
+                color: resultColor,
+                size: 38,
+              ),
       ),
       const SizedBox(height: 18),
       if (won && !_paused) ...[
@@ -2449,6 +2618,11 @@ class _Countdown extends StatelessWidget {
 // Time remaining as a bar that shrinks smoothly between whole seconds and
 // changes colour with the countdown.
 class _TimeBar extends StatelessWidget {
+  /// The animals' size on a rescue's bar. Level 7 tries the board's round
+  /// tokens here too, a size up.
+  static double iconFor(PuzzleGame game) =>
+      game.level.rescue != null && game.level.number == 7 ? 30 : 18;
+
   const _TimeBar(this.game);
   final PuzzleGame game;
 
@@ -2483,7 +2657,8 @@ class _TimeBar extends StatelessWidget {
       // end, in step with the hunter on the board: time running out and the
       // hunter arriving are the same moment, and a mistake's leap shows here
       // too.
-      const icon = 18.0;
+      final tokens = game.level.number == 7;
+      final icon = iconFor(game);
       return SizedBox(
         height: icon + 4,
         child: LayoutBuilder(
@@ -2499,7 +2674,13 @@ class _TimeBar extends StatelessWidget {
               Positioned(
                 left: 0,
                 top: 2,
-                child: AnimalAvatar(kind: scene.prey, size: icon),
+                child: tokens
+                    ? AnimalToken(
+                        kind: scene.prey,
+                        ring: rescueGreen,
+                        size: icon,
+                      )
+                    : AnimalAvatar(kind: scene.prey, size: icon),
               ),
               if (!game.allRescued)
                 TweenAnimationBuilder<double>(
@@ -2510,7 +2691,14 @@ class _TimeBar extends StatelessWidget {
                     top: 2,
                     child: child!,
                   ),
-                  child: AnimalAvatar(kind: scene.predator, size: icon),
+                  child: tokens
+                      ? AnimalToken(
+                          kind: scene.predator,
+                          ring: rescueDanger,
+                          hunter: true,
+                          size: icon,
+                        )
+                      : AnimalAvatar(kind: scene.predator, size: icon),
                 ),
             ],
           ),

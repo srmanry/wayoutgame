@@ -362,7 +362,13 @@ class _EscapePainter extends CustomPainter {
     void drawHunter() {
       // The snake always comes whole, its long body winding along the path.
       if (maze.hunter == AnimalKind.snake) {
-        _drawSnake(canvas, cell, at, game.clock + t);
+        _drawSnake(
+          canvas,
+          cell,
+          at,
+          game.clock + t,
+          burrow: maze.number == 115 ? _gates(size).$1 : null,
+        );
         return;
       }
       if (CharacterArt.drawFace(
@@ -699,14 +705,19 @@ class _EscapePainter extends CustomPainter {
 
     // Gateways sit above scenery so grass and buildings cannot cover them.
     final (hunterGate, exitGate, gateRoom) = _gates(size);
-    drawMazeGate(
-      canvas,
-      hunterGate,
-      gateRoom,
-      exit: false,
-      level: maze.number,
-      palette: palette,
-    );
+    // Level 115 tries the snake coming out of a burrow in the ground.
+    if (maze.number == 115) {
+      drawSnakeBurrow(canvas, hunterGate, gateRoom);
+    } else {
+      drawMazeGate(
+        canvas,
+        hunterGate,
+        gateRoom,
+        exit: false,
+        level: maze.number,
+        palette: palette,
+      );
+    }
     drawMazeGate(
       canvas,
       exitGate,
@@ -757,8 +768,9 @@ class _EscapePainter extends CustomPainter {
     Canvas canvas,
     double cell,
     Offset Function(Offset) at,
-    double wave,
-  ) {
+    double wave, {
+    Offset? burrow,
+  }) {
     const bodyRooms = 4.0, coilArm = .2 * 2 * math.pi;
     // In a dense maze the body keeps a size that still reads as a snake.
     final girth = math.max(cell, 26.0);
@@ -778,7 +790,21 @@ class _EscapePainter extends CustomPainter {
     // Whatever has not left yet stays coiled round the end of the trail.
     final path = Path();
     final turns = math.min(2.0, math.max(0.0, bodyRooms - length) / coilArm);
-    if (turns > .05) {
+    if (burrow != null && length < bodyRooms) {
+      // Out of a burrow: until the whole body is out the tail stays down the
+      // hole, and a snake still waiting only peeks its head out. Once out,
+      // it lets go of the hole and follows its trail like any other.
+      path.moveTo(burrow.dx, burrow.dy);
+      if (length == 0) {
+        final peek = burrow + Offset(girth * .42, 0);
+        path.lineTo(peek.dx, peek.dy);
+        spine.last = peek;
+      } else {
+        for (final p in spine) {
+          path.lineTo(p.dx, p.dy);
+        }
+      }
+    } else if (turns > .05) {
       final centre = spine.first;
       final steps = (turns * 16).ceil();
       for (var i = 0; i <= steps; i++) {
@@ -815,18 +841,24 @@ class _EscapePainter extends CustomPainter {
         ));
       }
     }
-    // Dark edge first, so the whole body reads against any ground.
-    final paint = Paint()..color = const Color(0xFF1F3D1C);
+    // Coloured to stand out on this level's scene, with a pale halo and a
+    // dark edge besides.
+    final colours = sceneCache.snake;
+    final paint = Paint()..color = Colors.white.withValues(alpha: .85);
     for (final (spot, radius) in samples) {
-      canvas.drawCircle(spot, radius + girth * .022, paint);
+      canvas.drawCircle(spot, radius + girth * .05, paint);
     }
-    paint.color = const Color(0xFF5E9B3C);
+    paint.color = colours.edge;
+    for (final (spot, radius) in samples) {
+      canvas.drawCircle(spot, radius + girth * .025, paint);
+    }
+    paint.color = colours.body;
     for (final (spot, radius) in samples) {
       canvas.drawCircle(spot, radius, paint);
     }
     // Pale diamonds along the back.
     final every = math.max(1, (cell * .34 / math.max(1.5, cell * .07)).round());
-    paint.color = const Color(0xFFE6D98A);
+    paint.color = colours.spots;
     for (var i = every ~/ 2; i < samples.length - 2; i += every) {
       final (spot, radius) = samples[i];
       final size = radius * .55;
@@ -871,15 +903,23 @@ class _EscapePainter extends CustomPainter {
     canvas.drawPath(
       head,
       Paint()
-        ..color = const Color(0xFF1F3D1C)
+        ..color = Colors.white.withValues(alpha: .85)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = girth * .044
+        ..strokeWidth = girth * .1
         ..strokeJoin = StrokeJoin.round,
     );
-    canvas.drawPath(head, Paint()..color = const Color(0xFF6DAE45));
+    canvas.drawPath(
+      head,
+      Paint()
+        ..color = colours.edge
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = girth * .05
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.drawPath(head, Paint()..color = colours.head);
     for (final s in [-1.0, 1.0]) {
       final eye = Offset(h * .3, s * h * .52);
-      canvas.drawCircle(eye, h * .27, Paint()..color = const Color(0xFFFFD84D));
+      canvas.drawCircle(eye, h * .27, Paint()..color = const Color(0xFFFFF3C4));
       canvas.drawOval(
         Rect.fromCenter(center: eye, width: h * .32, height: h * .12),
         Paint()..color = ink,

@@ -39,18 +39,8 @@ class EscapeMaze {
   int get cellCount => _cells.length;
   static double gradeOf(int number) => (number - 1) / (count - 1);
   AnimalKind get prey => PuzzleLevel.preyFor(number);
-  // The escape runner is human. Give this chase its own predator roster,
-  // independent of the small animals used in Animal Rescue.
-  static const _hunters = [
-    AnimalKind.lion,
-    AnimalKind.wolf,
-    AnimalKind.fox,
-    AnimalKind.lion,
-    AnimalKind.snake,
-    AnimalKind.owl,
-    AnimalKind.lion,
-  ];
-  AnimalKind get hunter => _hunters[(number - 1) % _hunters.length];
+  // A snake hunts the runner on every level.
+  AnimalKind get hunter => AnimalKind.snake;
 
   String get designName => '${_titleWords[(number - 1) ~/ 10]} $_shapeName';
   static const _titleWords = [
@@ -517,9 +507,12 @@ class EscapeGame extends ChangeNotifier {
 
   static const runnerSpeed = 9.0; // rooms per second while sliding
 
-  /// Rooms per second the snake moves, quicker on later levels.
+  /// Rooms per second the snake moves, quicker on later levels. It goes at
+  /// [pace] of the speed its timings allow for, which only gives more room.
   double get snakeSpeed =>
-      _firstSwipeAt == null ? speedFor(maze.number) : maze.stalking.speed;
+      (_firstSwipeAt == null ? speedFor(maze.number) : maze.stalking.speed) *
+      pace;
+  static const pace = .8;
   static double speedFor(int number) => 2.0 + 1.6 * EscapeMaze.gradeOf(number);
 
   /// When the hunter starts moving: just after the runner's first swipe, or

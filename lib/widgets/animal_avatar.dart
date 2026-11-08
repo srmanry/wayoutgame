@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../game/puzzle.dart';
 import 'character_art.dart';
 import 'critters.dart';
+import 'hunter_portrait.dart';
 
 class AnimalAvatar extends StatelessWidget {
   const AnimalAvatar({super.key, required this.kind, this.size = 40});
@@ -30,6 +31,138 @@ class _AnimalPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _AnimalPainter oldDelegate) =>
       kind != oldDelegate.kind;
+}
+
+const rescueGreen = Color(0xFF1FA67A);
+const rescueDanger = Color(0xFFE5484D);
+
+/// An animal as a round token: a soft shadow, a coloured ring (green for the
+/// animal to save, red for its hunter) round a pale plate with the animal
+/// inside. A hunter can show a notch on its ring pointing where it heads,
+/// and the animal can [lean] its head toward one side (-1 left, 1 right).
+void drawAnimalToken(
+  Canvas canvas,
+  Offset center,
+  double radius,
+  AnimalKind kind,
+  Color ring, {
+  Color plate = Colors.white,
+  bool hunter = false,
+  bool flip = false,
+  Offset? notch,
+  double lean = 0,
+}) {
+  canvas.drawCircle(
+    center + Offset(0, radius * .12),
+    radius,
+    Paint()..color = Colors.black.withValues(alpha: .16),
+  );
+  if (notch != null && notch.distance > 0) {
+    final d = notch / notch.distance;
+    final side = Offset(-d.dy, d.dx);
+    canvas.drawPath(
+      Path()
+        ..moveTo(
+          center.dx + d.dx * radius * 1.32,
+          center.dy + d.dy * radius * 1.32,
+        )
+        ..lineTo(
+          center.dx + d.dx * radius * .8 + side.dx * radius * .42,
+          center.dy + d.dy * radius * .8 + side.dy * radius * .42,
+        )
+        ..lineTo(
+          center.dx + d.dx * radius * .8 - side.dx * radius * .42,
+          center.dy + d.dy * radius * .8 - side.dy * radius * .42,
+        )
+        ..close(),
+      Paint()..color = ring,
+    );
+  }
+  // A slim ring, so the face is what catches the eye.
+  canvas.drawCircle(center, radius, Paint()..color = ring);
+  final inner = radius * .92;
+  canvas.drawCircle(center, inner, Paint()..color = plate);
+  canvas.save();
+  canvas.clipPath(
+    Path()..addOval(Rect.fromCircle(center: center, radius: inner)),
+  );
+  // Both show their cartoon head filling the plate: the hunter's frowning
+  // face, the animal's head from its chubby portrait, turned toward [lean].
+  canvas.translate(center.dx + lean * radius * .1, center.dy);
+  canvas.rotate(lean * .2);
+  canvas.scale(1 - .07 * lean.abs(), 1);
+  if (flip) canvas.scale(-1, 1);
+  if (hunter) {
+    drawHunterPortrait(
+      canvas,
+      Offset.zero,
+      radius * .95,
+      kind,
+      portraits: false,
+    );
+  } else {
+    drawCritter(
+      canvas,
+      Offset(0, radius * .32),
+      radius * 1.08,
+      kind,
+      shadow: false,
+      portraits: false,
+    );
+  }
+  canvas.restore();
+}
+
+/// [drawAnimalToken] as a widget, for the rescue's hunt bar.
+class AnimalToken extends StatelessWidget {
+  const AnimalToken({
+    super.key,
+    required this.kind,
+    required this.ring,
+    this.hunter = false,
+    this.size = 30,
+  });
+  final AnimalKind kind;
+  final Color ring;
+  final bool hunter;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: kind.name,
+    image: true,
+    child: CustomPaint(
+      size: Size.square(size),
+      painter: _TokenPainter(kind, ring, hunter),
+    ),
+  );
+}
+
+class _TokenPainter extends CustomPainter {
+  const _TokenPainter(this.kind, this.ring, this.hunter);
+  final AnimalKind kind;
+  final Color ring;
+  final bool hunter;
+
+  // The hunter on the bar walks left, toward its prey, and the prey looks
+  // back at it.
+  @override
+  void paint(Canvas canvas, Size size) => drawAnimalToken(
+    canvas,
+    size.center(Offset.zero),
+    size.width / 2 - 1,
+    kind,
+    ring,
+    hunter: hunter,
+    flip: hunter,
+    lean: hunter ? 0 : .7,
+  );
+
+  @override
+  bool shouldRepaint(covariant _TokenPainter oldDelegate) =>
+      kind != oldDelegate.kind ||
+      ring != oldDelegate.ring ||
+      hunter != oldDelegate.hunter;
 }
 
 // The vector artwork remains available if the portrait asset cannot load.

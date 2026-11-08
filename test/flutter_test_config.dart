@@ -12,5 +12,6 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   GameSettings.unlockAllLevelsForTesting = true;
   GameSettings.homeMotion = false;
   GameSettings.preloadLevels = false;
+  GameSettings.sounds = false;
   await testMain();
 }

@@ -8,9 +8,13 @@ void drawHunterPortrait(
   Canvas canvas,
   Offset center,
   double radius,
-  AnimalKind kind,
-) {
-  if (CharacterArt.draw(canvas, center, radius, kind.name)) return;
+  AnimalKind kind, {
+  bool portraits = true,
+}) {
+  // [portraits] false keeps to the cartoon, even where a photo exists.
+  if (portraits && CharacterArt.draw(canvas, center, radius, kind.name)) {
+    return;
+  }
   canvas.save();
   canvas.translate(center.dx, center.dy);
   canvas.scale(radius);

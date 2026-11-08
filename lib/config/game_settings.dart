@@ -23,6 +23,10 @@ class GameSettings {
   // switch it off: their fake clock never lets the isolate report back.
   static bool preloadLevels = true;
 
+  // Sound effects. Widget tests switch them off: there is no audio plugin
+  // to play them.
+  static bool sounds = true;
+
   // Looping motion: the home backdrop, previews, CONTINUE pulse and the
   // maze pad's breathing arrows.
   // Widget tests switch it off so pumpAndSettle can settle.

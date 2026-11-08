@@ -50,9 +50,10 @@ void main() {
     expect(game.runnerLastMovedAt, lessThan(0));
   });
 
-  test('human escape levels include a lion with pursuit-facing movement', () {
-    expect(EscapeMaze.level(1).hunter, AnimalKind.lion);
-    expect(EscapeMaze.level(15).hunter, AnimalKind.lion);
+  test('every escape level is hunted by a snake with pursuit-facing movement', () {
+    for (final level in [1, 15, 126, EscapeMaze.count]) {
+      expect(EscapeMaze.level(level).hunter, AnimalKind.snake);
+    }
     final game = EscapeGame();
     game.advance(game.hunterHeadStart);
     var steps = 0;

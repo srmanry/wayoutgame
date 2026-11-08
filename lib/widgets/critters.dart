@@ -316,11 +316,16 @@ void drawCritter(
   bool moving = false,
   bool flip = false,
   bool shadow = true,
+  bool portraits = true,
 }) {
   final portraitCenter = moving
       ? center + Offset(0, math.sin(phase) * radius * .06)
       : center;
-  if (CharacterArt.draw(canvas, portraitCenter, radius, kind.name)) return;
+  // [portraits] false keeps to the cartoon, even where a photo exists.
+  if (portraits &&
+      CharacterArt.draw(canvas, portraitCenter, radius, kind.name)) {
+    return;
+  }
   canvas.save();
   canvas.translate(center.dx, center.dy);
   canvas.scale(flip ? -radius : radius, radius);
@@ -771,8 +776,10 @@ void drawStalker(
   double cell,
   AnimalKind kind,
   Offset heading,
-  double phase,
-) {
+  double phase, {
+  bool moving = true,
+  double? motionPhase,
+}) {
   if (CharacterArt.drawActor(
     canvas,
     center,
@@ -780,7 +787,8 @@ void drawStalker(
     kind.name,
     heading: heading,
     clock: phase,
-    moving: true,
+    moving: moving,
+    motionPhase: motionPhase,
   )) {
     return;
   }

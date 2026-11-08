@@ -175,3 +175,88 @@ void drawMazeGate(
   }
   canvas.restore();
 }
+
+/// A snake's burrow dug into the earth: a dark hole inside a ring of heaped
+/// soil, with clods and pebbles thrown round it. Drawn in place of the
+/// hunter's gateway, sized to a single corridor like the gate.
+void drawSnakeBurrow(Canvas canvas, Offset center, Size room) {
+  const soil = Color(0xFF9A6A3C);
+  const soilLight = Color(0xFFBF8D5A);
+  const soilDark = Color(0xFF5E3B1E);
+  canvas.save();
+  canvas.translate(center.dx, center.dy);
+  canvas.scale(room.width * 1.2, room.height * 1.2);
+
+  // Its shadow on the ground.
+  canvas.drawOval(
+    Rect.fromCenter(center: const Offset(.03, .08), width: 1.12, height: .86),
+    Paint()..color = Colors.black.withValues(alpha: .16),
+  );
+  // Thrown-out clods and pebbles round the rim.
+  for (final (x, y, r, colour) in const [
+    (-.5, -.22, .07, soil),
+    (.46, -.28, .06, soilLight),
+    (.5, .2, .075, soil),
+    (-.44, .3, .06, soilLight),
+    (-.08, -.47, .05, soil),
+    (.14, .46, .055, soil),
+    (.36, -.44, .04, Color(0xFFB8B2A6)),
+    (-.32, .44, .045, Color(0xFFA9A397)),
+  ]) {
+    canvas.drawCircle(Offset(x, y), r, Paint()..color = colour);
+    canvas.drawCircle(
+      Offset(x, y),
+      r,
+      Paint()
+        ..color = soilDark.withValues(alpha: .5)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = .015,
+    );
+  }
+  // The heaped ring of soil, lit from the top left.
+  final mound = Rect.fromCenter(center: Offset.zero, width: .9, height: .74);
+  canvas.drawOval(
+    mound,
+    Paint()
+      ..shader = const RadialGradient(
+        center: Alignment(-.35, -.4),
+        radius: .9,
+        colors: [soilLight, soil, soilDark],
+        stops: [0, .6, 1],
+      ).createShader(mound),
+  );
+  canvas.drawOval(
+    mound,
+    Paint()
+      ..color = soilDark
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = .03,
+  );
+  // The hole, darkest at its heart, with a lit lip along the far edge.
+  final hole = Rect.fromCenter(
+    center: const Offset(0, .03),
+    width: .56,
+    height: .42,
+  );
+  canvas.drawOval(
+    hole,
+    Paint()
+      ..shader = const RadialGradient(
+        center: Alignment(0, .25),
+        colors: [Color(0xFF120A05), Color(0xFF2E1B0D), Color(0xFF4A2E17)],
+        stops: [0, .7, 1],
+      ).createShader(hole),
+  );
+  canvas.drawArc(
+    hole.inflate(.012),
+    3.5,
+    2.4,
+    false,
+    Paint()
+      ..color = soilLight
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = .028
+      ..strokeCap = StrokeCap.round,
+  );
+  canvas.restore();
+}

@@ -627,6 +627,9 @@ class _BoardPainter extends CustomPainter {
     final unit = max(cell, 34.0);
     final near = ((hunt - .6) / .4).clamp(0.0, 1.0);
     final danger = max((3 - game.lives) / 3, near);
+    // Level 7 tries round tokens: the animal to save in a green ring, its
+    // hunter in a red one, both large enough to read at a glance.
+    final tokens = game.level.number == 7;
     for (final target in scene.targets) {
       final rescued = game.rescued.contains(target.id);
       final fleeing = rescued && escaping?.id == target.id && animation < 1;
@@ -641,10 +644,35 @@ class _BoardPainter extends CustomPainter {
             0,
           );
         }
-        // The prey trembles harder the closer the hunter gets.
-        position += Offset(sin(wave * 7) * unit * (.008 + .025 * danger), 0);
-        final scale = 1 - .75 * Curves.easeIn.transform(caught);
-        if (danger > 0 && caught == 0) {
+        // The prey breathes calmly; the red ring shows the danger instead.
+        final breath = 1 + .025 * sin(wave);
+        final scale = (1 - .75 * Curves.easeIn.transform(caught)) * breath;
+        if (tokens) {
+          if (danger > 0 && caught == 0) {
+            // A soft red glow that swells as the hunter closes in.
+            canvas.drawCircle(
+              position,
+              unit * (.62 + .05 * sin(wave)),
+              Paint()
+                ..color = rescueDanger.withValues(
+                  alpha: (.12 + .2 * danger) * (.75 + .25 * sin(wave)),
+                ),
+            );
+          }
+          // It leans its head toward the hunter, keeping an eye on it.
+          final (from, _) = _huntRoute(target, hunt);
+          final watch = point(const Cell(0, 0)) + from * cell - position;
+          drawAnimalToken(
+            canvas,
+            position,
+            unit * .5 * scale,
+            scene.prey,
+            rescueGreen,
+            plate: highlighted ? const Color(0xFFC9F2E5) : Colors.white,
+            lean: (watch.dx / (unit * 2)).clamp(-1.0, 1.0),
+          );
+        }
+        if (!tokens && danger > 0 && caught == 0) {
           canvas.drawCircle(
             position,
             unit * (.47 + .04 * sin(wave * 2)),
@@ -655,15 +683,17 @@ class _BoardPainter extends CustomPainter {
               ..strokeWidth = 2,
           );
         }
-        canvas.drawCircle(
-          position,
-          unit * .43 * scale,
-          Paint()
-            ..color = highlighted
-                ? const Color(0xFFC9F2E5)
-                : const Color(0xFFFFF2D9),
-        );
-        if ((highlighted || game.canRescue(target)) && caught == 0) {
+        if (!tokens) {
+          canvas.drawCircle(
+            position,
+            unit * .43 * scale,
+            Paint()
+              ..color = highlighted
+                  ? const Color(0xFFC9F2E5)
+                  : const Color(0xFFFFF2D9),
+          );
+        }
+        if (!tokens && (highlighted || game.canRescue(target)) && caught == 0) {
           canvas.drawCircle(
             position,
             unit * .44,
@@ -673,7 +703,9 @@ class _BoardPainter extends CustomPainter {
               ..strokeWidth = 2,
           );
         }
-        drawAnimalPortrait(canvas, position, unit * .36 * scale, scene.prey);
+        if (!tokens) {
+          drawAnimalPortrait(canvas, position, unit * .36 * scale, scene.prey);
+        }
       }
 
       // The hunter is drawn last so it lands on top of its prey.
@@ -697,7 +729,25 @@ class _BoardPainter extends CustomPainter {
           Paint()..color = Colors.black.withValues(alpha: alpha),
         );
       }
-      if (scene.predator == AnimalKind.snake) {
+      if (tokens && scene.predator != AnimalKind.snake) {
+        // It glides along its lane, a notch on its ring pointing the way,
+        // and springs at its prey for the final pounce.
+        final prey = point(target.cell);
+        final spring = sin(pi * caught);
+        final at =
+            Offset.lerp(hunter, prey, .3 * spring)! -
+            Offset(0, unit * .12 * spring);
+        drawAnimalToken(
+          canvas,
+          at,
+          unit * .5,
+          scene.predator,
+          rescueDanger,
+          hunter: true,
+          flip: heading.dx < 0,
+          notch: progress < 1 ? heading : null,
+        );
+      } else if (scene.predator == AnimalKind.snake) {
         _drawSnake(
           canvas,
           target,
@@ -710,6 +760,8 @@ class _BoardPainter extends CustomPainter {
         );
       } else {
         // Four-legged hunters and the owl pace their lane, seen from above.
+        // Their steps follow the ground they cover, so a slow creep is a slow
+        // walk and a hunter that has stopped stands still.
         drawStalker(
           canvas,
           hunter,
@@ -717,6 +769,8 @@ class _BoardPainter extends CustomPainter {
           scene.predator,
           heading,
           wave * 5,
+          moving: progress > 0 && progress < 1 && !fleeing,
+          motionPhase: progress * _huntRouteLength(target) / 1.1,
         );
       }
       if (roar > 0 && !fleeing) {
@@ -791,12 +845,23 @@ class _BoardPainter extends CustomPainter {
         );
       }
       final scale = 1 - .35 * party;
-      canvas.drawCircle(
-        position,
-        unit * .43 * scale,
-        Paint()..color = const Color(0xFFC9F2E5),
-      );
-      drawAnimalPortrait(canvas, position, unit * .36 * scale, scene.prey);
+      if (tokens) {
+        drawAnimalToken(
+          canvas,
+          position,
+          unit * .5 * scale,
+          scene.prey,
+          rescueGreen,
+          plate: const Color(0xFFC9F2E5),
+        );
+      } else {
+        canvas.drawCircle(
+          position,
+          unit * .43 * scale,
+          Paint()..color = const Color(0xFFC9F2E5),
+        );
+        drawAnimalPortrait(canvas, position, unit * .36 * scale, scene.prey);
+      }
     }
   }
 

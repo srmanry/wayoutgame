@@ -36,6 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   web_socket_channel: ^3.0.3
   shared_preferences: ^2.5.6
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -66,6 +67,7 @@ flutter:
     - assets/characters/human_idle_directions_v5.png
     - assets/maze/natural_grass.jpg
     - assets/maze/city_rooftop.jpg
+    - assets/sounds/level_clear.wav
 
   # To add assets to your application, add an assets section, like this:
   # assets:
