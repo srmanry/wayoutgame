@@ -13,5 +13,6 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   GameSettings.homeMotion = false;
   GameSettings.preloadLevels = false;
   GameSettings.sounds = false;
+  GameSettings.showGuides = false;
   await testMain();
 }

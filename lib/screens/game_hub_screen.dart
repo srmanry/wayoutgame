@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
 import '../config/game_settings.dart';
+import '../config/game_sounds.dart';
 import '../config/progress_store.dart';
 import '../escape/maze_escape.dart' show EscapeMaze;
 import '../multiplayer/competition_screen.dart';
@@ -50,6 +51,7 @@ class _GameHubScreenState extends State<GameHubScreen>
   void initState() {
     super.initState();
     if (GameSettings.homeMotion) _loop.repeat();
+    GameSounds.enabled = ProgressStore.getBool('sounds') ?? GameSounds.enabled;
     LevelPreload.maze(ProgressStore.startLevel('escape', EscapeMaze.count));
     for (final (key, mode) in const [
       ('basic', GameMode.basic),
@@ -93,12 +95,15 @@ class _GameHubScreenState extends State<GameHubScreen>
   static int _levelCount(PlayMode mode) =>
       mode == PlayMode.escape ? EscapeMaze.count : PuzzleLevel.count;
 
-  ({int level, int unlocked, int stars}) _progress(PlayMode mode) {
+  ({int level, int unlocked, int stars, int completed}) _progress(
+    PlayMode mode,
+  ) {
     final saved = ProgressStore.load(mode.name);
     return (
       level: saved?.level ?? 1,
       unlocked: saved?.unlocked ?? 1,
       stars: saved?.stars.values.fold<int>(0, (a, b) => a + b) ?? 0,
+      completed: saved?.stars.length ?? 0,
     );
   }
 
@@ -319,6 +324,33 @@ class _GameHubScreenState extends State<GameHubScreen>
           ),
         ),
       ),
+      // The one switch for the level-clear music, for every game.
+      Tooltip(
+        message: GameSounds.enabled ? 'Music on' : 'Music off',
+        child: GestureDetector(
+          onTap: () => setState(() {
+            GameSounds.enabled = !GameSounds.enabled;
+            ProgressStore.setBool('sounds', GameSounds.enabled);
+          }),
+          child: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: .28),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: .12)),
+            ),
+            child: Icon(
+              GameSounds.enabled
+                  ? Icons.music_note_rounded
+                  : Icons.music_off_rounded,
+              color: GameSounds.enabled ? _gold : Colors.white54,
+              size: 20,
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
       Semantics(
         label: '$stars stars earned',
         child: Container(
@@ -524,7 +556,7 @@ class _GameHubScreenState extends State<GameHubScreen>
     final look = _looks[mode]!;
     final progress = _progress(mode);
     final count = _levelCount(mode);
-    final done = ((progress.unlocked - 1) / count).clamp(0.0, 1.0);
+    final done = (progress.completed / count).clamp(0.0, 1.0);
     return GameButton(
       color: look.color,
       shade: look.shade,

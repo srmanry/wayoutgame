@@ -692,7 +692,8 @@ class EscapeGame extends ChangeNotifier {
     }
     if ((trail.last - snakeAt).distance > .15) {
       trail.add(snakeAt);
-      if (trail.length > 40) trail.removeAt(0);
+      // Enough for a 140-pixel body in the densest maze.
+      if (trail.length > 120) trail.removeAt(0);
     }
   }
 

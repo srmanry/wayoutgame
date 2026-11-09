@@ -96,6 +96,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   _party;
   int _parties = 0;
   bool _paused = false;
+  int _modalDepth = 0;
+  bool get _inputBlocked =>
+      !widget.active || _paused || _choosingCharacter || _modalDepth > 0;
   PlayerCharacter _character = PlayerCharacter.male;
   bool _choosingCharacter = false;
   // A maze pause leaves the maze in view so the way can be studied; it
@@ -112,6 +115,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _restoreProgress();
+    _maybeGuide();
   }
 
   // Picks up where the player left off, then saves as progress is made.
@@ -174,6 +178,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _feedback = null;
       _paused = false;
       _stopPeek();
+    }
+    if (widget.mode != oldWidget.mode || widget.active && !oldWidget.active) {
+      _maybeGuide();
     }
     if (!widget.active) {
       _paused = true;
@@ -314,27 +321,29 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _restart();
       return;
     }
-    final restart = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: .35),
-      builder: (context) => game.isRescue
-          ? _rescueRestartDialog(context)
-          : AlertDialog(
-              title: const Text('Start fresh?'),
-              content: const Text(
-                'Your moves in this level will be reset. You’ll get three lives and three hints again.',
+    final restart = await _withModalPause(
+      () => showDialog<bool>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: .35),
+        builder: (context) => game.isRescue
+            ? _rescueRestartDialog(context)
+            : AlertDialog(
+                title: const Text('Start fresh?'),
+                content: const Text(
+                  'Your moves in this level will be reset. You’ll get three lives and three hints again.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Keep playing'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Restart'),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Keep playing'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Restart'),
-                ),
-              ],
-            ),
+      ),
     );
     if (restart == true && mounted) _restart();
   }
@@ -475,57 +484,169 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _showHelp() => showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(
-        _escaping
-            ? 'Run for the way out!'
-            : game.isRescue
-            ? 'Rescue field guide'
-            : 'A clear path, a clear mind.',
-      ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _escaping
-                  ? 'Swipe or tap the arrow buttons. Your character runs along the corridor until the next turn or crossing. Tap You to choose a male or female character.'
-                  : 'Tap an arrow to send it out in the direction it points. The path from its tip to the edge must be clear.',
+  // The first time a game's level 1 opens, its guide shows once.
+  void _maybeGuide() {
+    if (!GameSettings.showGuides || !widget.active) return;
+    final level = _escaping ? _escapeGame.maze.number : game.level.number;
+    final key = 'guide.${_view.name}';
+    if (level != 1 || (ProgressStore.getBool(key) ?? false)) return;
+    ProgressStore.setBool(key, true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.active) _showHelp();
+    });
+  }
+
+  // Dialogs cover the controls, so the current attempt must wait for them.
+  // Keep this separate from the player's pause and lifecycle pause state.
+  Future<T> _withModalPause<T>(Future<T> Function() show) async {
+    setState(() => _modalDepth++);
+    try {
+      return await show();
+    } finally {
+      if (mounted) setState(() => _modalDepth--);
+    }
+  }
+
+  Future<void> _showHelp() {
+    final (title, colour, steps) = _escaping
+        ? (
+            'Run for the way out!',
+            _mazePalette.accent,
+            const [
+              (
+                Icons.swipe_rounded,
+                'Swipe or tap the arrow buttons. You run along the path until the next turn.',
+              ),
+              (
+                Icons.pest_control_rounded,
+                'A snake comes in from the left after your first move and follows you.',
+              ),
+              (
+                Icons.keyboard_double_arrow_right_rounded,
+                'Reach the green arrows on the right to escape. A hint shows which way to run.',
+              ),
+            ],
+          )
+        : game.isRescue
+        ? (
+            'Save the animal!',
+            _sun,
+            const [
+              (
+                Icons.pets_rounded,
+                'An animal is trapped among the arrows, and a hunter is on its way.',
+              ),
+              (
+                Icons.touch_app_rounded,
+                'Tap arrows to send them off the board and open a path to the animal’s gate.',
+              ),
+              (
+                Icons.favorite_rounded,
+                'A blocked arrow costs a heart and brings the hunter closer. Be quick!',
+              ),
+            ],
+          )
+        : (
+            'Clear every arrow!',
+            accent,
+            const [
+              (
+                Icons.touch_app_rounded,
+                'Tap an arrow and it slides off the board the way it points.',
+              ),
+              (
+                Icons.block_rounded,
+                'Its path to the edge must be clear. A blocked arrow costs a heart.',
+              ),
+              (
+                Icons.lightbulb_rounded,
+                'Stuck? A hint shows a safe move, and Undo brings your last arrow back.',
+              ),
+            ],
+          );
+    return _withModalPause(
+      () => showDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(26),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'HOW TO PLAY',
+                  style: TextStyle(
+                    color: colour,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.6,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: ink,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -.5,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                for (final (i, (icon, text)) in steps.indexed) ...[
+                  if (i > 0) const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: colour.withValues(alpha: .12),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(icon, color: colour, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            text,
+                            style: const TextStyle(
+                              color: Color(0xFF4A5568),
+                              fontSize: 14,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: colour),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Let’s play'),
+                  ),
+                ),
+              ],
             ),
-            SizedBox(height: 16),
-            Text(
-              _escaping
-                  ? 'A hunter slips in from its burrow on the left and follows. Find the green gap on the right before it catches up. Each level has its own shape and paths: gardens, rings, stars, islands and more. White gaps are outside the maze. Higher levels have longer routes, fewer shortcuts and faster hunters. A hint shows which way to run.'
-                  : game.isRescue
-                  ? 'Each level brings a new animal and a new hunter: a snake, fox, wolf, cat or owl. The animal is wrapped in a maze of arrows, and the hunter is on its way. The green area shows where the animal can already walk. Lift the arrows around it until a way opens to its gate, and it runs home before the clock runs out. Each blocked move costs a heart and lets the hunter leap closer. If it reaches its prey, or you run out of hearts, try again. Undo brings back your last arrow.'
-                  : 'Clear every arrow to finish. A blocked arrow costs one heart. Use a hint to reveal a safe move, or undo to bring back your last arrow.',
-            ),
-            SizedBox(height: 16),
-            Text(
-              _escaping
-                  ? 'Keyboard: arrow keys to run • H for a hint • R to restart • Esc to pause'
-                  : 'Keyboard: H for a hint • R to restart • Esc to pause',
-              style: TextStyle(color: Color(0xFF748094), fontSize: 12),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Level progress is kept during this app session.',
-              style: TextStyle(color: Color(0xFF748094), fontSize: 12),
-            ),
-          ],
+          ),
         ),
       ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Let’s play'),
-        ),
-      ],
-    ),
-  );
+    );
+  }
 
   static const _tileExtent = 64.0, _tileGap = 10.0;
 
@@ -538,160 +659,164 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     return math.max(0, (row - 1) * (tile + _tileGap));
   }
 
-  Future<void> _showLevels() => showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    backgroundColor: _escaping ? _mazePalette.canvas : const Color(0xFFF7F8FC),
-    builder: (context) {
-      final stars = _escaping ? _escapeGame.stars : game.stars;
-      final count = _escaping ? EscapeMaze.count : PuzzleLevel.count;
-      final current = _escaping ? _escapeGame.maze.number : game.level.number;
-      final done = stars.length;
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-          child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * .7,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _escaping
-                            ? 'Maze runs'
-                            : game.isRescue
-                            ? 'Rescue adventures'
-                            : 'Your little escape',
-                        style: Theme.of(context).textTheme.headlineMedium,
+  Future<void> _showLevels() => _withModalPause(
+    () => showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: _escaping
+          ? _mazePalette.canvas
+          : const Color(0xFFF7F8FC),
+      builder: (context) {
+        final stars = _escaping ? _escapeGame.stars : game.stars;
+        final count = _escaping ? EscapeMaze.count : PuzzleLevel.count;
+        final current = _escaping ? _escapeGame.maze.number : game.level.number;
+        final done = stars.length;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * .7,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _escaping
+                              ? 'Maze runs'
+                              : game.isRescue
+                              ? 'Rescue adventures'
+                              : 'Your little escape',
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
                       ),
-                    ),
-                    // Stars earned so far.
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF4DE),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.star_rounded,
-                            size: 16,
-                            color: Color(0xFFE8AA42),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${stars.values.fold(0, (a, b) => a + b)}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFFB57A12),
+                      // Stars earned so far.
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF4DE),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.star_rounded,
+                              size: 16,
+                              color: Color(0xFFE8AA42),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: LinearProgressIndicator(
-                          value: done / count,
-                          minHeight: 6,
-                          color: _escaping ? _mazePalette.accent : mint,
-                          backgroundColor: const Color(0xFFE6EAF2),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${stars.values.fold(0, (a, b) => a + b)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFFB57A12),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '$done / $count',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF748094),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) => GridView.builder(
-                      // Open with the level being played in view, a row down
-                      // from the top, so long level lists need no hunting.
-                      controller: ScrollController(
-                        initialScrollOffset: _pickerOffset(
-                          constraints.maxWidth,
-                          current,
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: LinearProgressIndicator(
+                            value: done / count,
+                            minHeight: 6,
+                            color: _escaping ? _mazePalette.accent : mint,
+                            backgroundColor: const Color(0xFFE6EAF2),
+                          ),
                         ),
                       ),
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: _tileExtent,
-                            mainAxisSpacing: _tileGap,
-                            crossAxisSpacing: _tileGap,
+                      const SizedBox(width: 12),
+                      Text(
+                        '$done / $count',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF748094),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => GridView.builder(
+                        // Open with the level being played in view, a row down
+                        // from the top, so long level lists need no hunting.
+                        controller: ScrollController(
+                          initialScrollOffset: _pickerOffset(
+                            constraints.maxWidth,
+                            current,
                           ),
-                      itemCount: count,
-                      itemBuilder: (context, index) {
-                        final level = index + 1;
-                        final landscape = _escaping
-                            ? MazePalette.forLevel(level)
-                            : null;
-                        return _LevelTile(
-                          highlight: landscape?.accent ?? accent,
-                          themeLabel: _escaping
-                              ? MazeTheme.forLevel(level).label
-                              : null,
-                          showOpenLocks: !_escaping,
-                          level: level,
-                          locked: _escaping
-                              ? !_escapeGame.isLevelUnlocked(level)
-                              : !game.isLevelUnlocked(level),
-                          current: level == current,
-                          stars: stars[level],
-                          onTap: () {
-                            _escaping
-                                ? _escapeGame.selectLevel(level)
-                                : game.selectLevel(level);
-                            setState(() => _feedback = null);
-                            Navigator.pop(context);
-                          },
-                        );
-                      },
+                        ),
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: _tileExtent,
+                              mainAxisSpacing: _tileGap,
+                              crossAxisSpacing: _tileGap,
+                            ),
+                        itemCount: count,
+                        itemBuilder: (context, index) {
+                          final level = index + 1;
+                          final landscape = _escaping
+                              ? MazePalette.forLevel(level)
+                              : null;
+                          return _LevelTile(
+                            highlight: landscape?.accent ?? accent,
+                            themeLabel: _escaping
+                                ? MazeTheme.forLevel(level).label
+                                : null,
+                            showOpenLocks: !_escaping,
+                            level: level,
+                            locked: _escaping
+                                ? !_escapeGame.isLevelUnlocked(level)
+                                : !game.isLevelUnlocked(level),
+                            current: level == current,
+                            stars: stars[level],
+                            onTap: () {
+                              _escaping
+                                  ? _escapeGame.selectLevel(level)
+                                  : game.selectLevel(level);
+                              setState(() => _feedback = null);
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-      );
-    },
+        );
+      },
+    ),
   );
 
   @override
   Widget build(BuildContext context) => CallbackShortcuts(
     bindings: {
       const SingleActivator(LogicalKeyboardKey.keyH): () {
-        if (_paused || _choosingCharacter) return;
+        if (_inputBlocked) return;
         if (_escaping) {
           if (!_escapeGame.isOver) _escapeHint();
         } else if (!game.isComplete && !game.isGameOver) {
           _hint();
         }
       },
-      if (_escaping && !_paused && !_choosingCharacter)
+      if (_escaping && !_inputBlocked)
         for (final (key, direction) in const [
           (LogicalKeyboardKey.arrowUp, Direction.up),
           (LogicalKeyboardKey.arrowRight, Direction.right),
@@ -699,10 +824,12 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           (LogicalKeyboardKey.arrowLeft, Direction.left),
         ])
           SingleActivator(key): () => _escapeGame.swipe(direction),
-      const SingleActivator(LogicalKeyboardKey.keyR): _confirmRestart,
-      const SingleActivator(LogicalKeyboardKey.escape): () => _escaping
-          ? (_paused ? _resumePeek() : _startPeek())
-          : setState(() => _paused = !_paused),
+      if (widget.active && _modalDepth == 0 && !_choosingCharacter) ...{
+        const SingleActivator(LogicalKeyboardKey.keyR): _confirmRestart,
+        const SingleActivator(LogicalKeyboardKey.escape): () => _escaping
+            ? (_paused ? _resumePeek() : _startPeek())
+            : setState(() => _paused = !_paused),
+      },
     },
     child: Focus(
       autofocus: widget.active,
@@ -1334,17 +1461,17 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                           aspectRatio: aspect,
                           child: Stack(
                             children: [
-                              if (!_paused)
-                                PuzzleBoard(
-                                  key: ValueKey(
-                                    '${game.mode.name}-${game.revision}',
-                                  ),
-                                  game: game,
-                                  onArrow: _tap,
-                                  onRescue: _rescueAnimal,
-                                  chase: true,
-                                  timed: true,
+                              PuzzleBoard(
+                                key: ValueKey(
+                                  '${game.mode.name}-${game.revision}',
                                 ),
+                                game: game,
+                                onArrow: _tap,
+                                onRescue: _rescueAnimal,
+                                chase: true,
+                                timed: true,
+                                paused: _inputBlocked,
+                              ),
                               if (_paused || game.isComplete || game.isGameOver)
                                 Positioned.fill(
                                   child: _DelayedReveal(
@@ -1628,12 +1755,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                                         key: ValueKey('escape-${run.revision}'),
                                         game: run,
                                         character: _character,
-                                        paused: _paused || _choosingCharacter,
+                                        paused: _inputBlocked,
                                         tapToMove: _touchControls,
-                                        onEscaped: () => setState(() {
-                                          _feedback = null;
-                                          _celebrate(banner: false);
-                                        }),
+                                        onEscaped: () {
+                                          GameSounds.levelClear();
+                                          setState(() {
+                                            _feedback = null;
+                                            _celebrate(banner: false);
+                                          });
+                                        },
                                         onCaught: () {
                                           HapticFeedback.mediumImpact();
                                           setState(() => _feedback = null);
@@ -1798,13 +1928,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     required VoidCallback? onTap,
   }) {
     final style = _decor!.frame;
+    const side = 34.0;
     return Tooltip(
       message: tooltip,
       child: FrameButton(
         style: style,
         onTap: onTap,
-        width: 34,
-        height: 34,
+        width: side,
+        height: side,
         child: Icon(icon, size: 18, color: style.look.icon),
       ),
     );

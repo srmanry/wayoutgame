@@ -165,7 +165,9 @@ void main() {
   });
 
   test('prey hide in new places and run home in every direction', () {
-    final spots = <Cell>{};
+    // The same cell coordinate on differently sized boards is a different
+    // hiding place. Include the board dimensions in an exhaustive audit.
+    final spots = <(int, int, Cell)>{};
     final exits = <Direction>{};
     final corners = <Cell>{};
     for (final number in sampleLevels) {
@@ -173,7 +175,7 @@ void main() {
       final target = level.rescue!.targets.single;
       expect(level.contains(target.cell), isTrue);
       expect(level.contains(target.predatorCell), isFalse);
-      spots.add(target.cell);
+      spots.add((level.size, level.rows, target.cell));
       exits.add(target.exit);
       corners.add(Cell(target.predatorCell.x.sign, target.predatorCell.y.sign));
       final route = level.hunterRoute(target);

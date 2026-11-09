@@ -3,9 +3,7 @@ class GameSettings {
 
   // Levels open one after another in the released game. Tests switch this
   // on so they can jump straight to any level.
-  // TEMPORARY: on while the level designs are being checked. Set back to
-  // false before building a release.
-  static bool unlockAllLevelsForTesting = true;
+  static bool unlockAllLevelsForTesting = false;
 
   // Solo rescue hunters close in over time. Widget tests switch this off so
   // the board can settle between frames.
@@ -26,6 +24,10 @@ class GameSettings {
   // Sound effects. Widget tests switch them off: there is no audio plugin
   // to play them.
   static bool sounds = true;
+
+  // A how-to-play guide the first time each game's level 1 opens. Widget
+  // tests switch it off so it does not cover their boards.
+  static bool showGuides = true;
 
   // Looping motion: the home backdrop, previews, CONTINUE pulse and the
   // maze pad's breathing arrows.

@@ -21,6 +21,7 @@ class PuzzleBoard extends StatefulWidget {
     this.onRescue,
     this.chase = false,
     this.timed = false,
+    this.paused = false,
   });
   final PuzzleGame game;
   final ValueChanged<int> onArrow;
@@ -30,6 +31,7 @@ class PuzzleBoard extends StatefulWidget {
   // Solo play: the level's countdown runs while this board is on screen,
   // so it stops whenever the game is paused.
   final bool timed;
+  final bool paused;
 
   @override
   State<PuzzleBoard> createState() => _PuzzleBoardState();
@@ -57,6 +59,7 @@ class _PuzzleBoardState extends State<PuzzleBoard>
   final _flights = <_Flight>[];
   late final Ticker _flightClock = createTicker(_onFlight);
   final _flightTime = ValueNotifier(Duration.zero);
+  Duration _lastFlight = Duration.zero;
   // Big picture boards can be pinched to zoom; panning only once zoomed so
   // the page still scrolls normally.
   final _zoom = TransformationController();
@@ -76,6 +79,7 @@ class _PuzzleBoardState extends State<PuzzleBoard>
   late final Ticker _countdown = createTicker(_onCountdown);
   Duration _lastCount = Duration.zero;
   Duration _lastTick = Duration.zero;
+  final _pausedAnimations = <AnimationController>{};
   // Hunter position along its route as drawn, easing toward the real one.
   final _shown = ValueNotifier<double>(0);
   late int _lives = widget.game.lives;
@@ -98,7 +102,7 @@ class _PuzzleBoardState extends State<PuzzleBoard>
   // Idle motion loops while the chase is on; otherwise it runs for a while
   // after each change, then rests so the board can settle.
   void _wake() {
-    if (!widget.game.isRescue) return;
+    if (!widget.game.isRescue || widget.paused) return;
     final live = _chasing && !widget.game.allRescued && !widget.game.isGameOver;
     live ? _ambient.repeat() : _ambient.repeat(count: 12);
     if (!_clock.isActive) {
@@ -153,6 +157,44 @@ class _PuzzleBoardState extends State<PuzzleBoard>
       oldWidget.game.removeListener(_onGame);
       widget.game.addListener(_onGame);
     }
+    _syncClocks();
+  }
+
+  void _syncClocks() {
+    final game = widget.game;
+    final counting =
+        !widget.paused &&
+        widget.timed &&
+        GameSettings.levelTimer &&
+        !game.isComplete &&
+        !game.isGameOver;
+    if (counting && !_countdown.isActive) {
+      _lastCount = Duration.zero;
+      _countdown.start();
+    } else if (!counting) {
+      _countdown.stop();
+    }
+    if (widget.paused) {
+      _clock.stop();
+      _flightClock.stop();
+      _ambient.stop();
+      for (final controller in [_animation, _shake, _hunt]) {
+        if (controller.isAnimating) {
+          _pausedAnimations.add(controller);
+          controller.stop();
+        }
+      }
+    } else {
+      for (final controller in _pausedAnimations) {
+        controller.forward();
+      }
+      _pausedAnimations.clear();
+      _wake();
+      if (_flights.isNotEmpty && !_flightClock.isActive) {
+        _lastFlight = Duration.zero;
+        _flightClock.start();
+      }
+    }
   }
 
   @override
@@ -161,14 +203,7 @@ class _PuzzleBoardState extends State<PuzzleBoard>
     widget.game.addListener(_onGame);
     // The hunter enters at the far corner and starts prowling.
     _shown.value = _chasing ? widget.game.huntProgress : 0;
-    _wake();
-    final game = widget.game;
-    if (widget.timed &&
-        GameSettings.levelTimer &&
-        !game.isComplete &&
-        !game.isGameOver) {
-      _countdown.start();
-    }
+    _syncClocks();
     _zoom.addListener(() {
       final scale = _zoom.value.getMaxScaleOnAxis();
       if ((scale > 1.01) != (_scale > 1.01)) setState(() => _scale = scale);
@@ -194,7 +229,7 @@ class _PuzzleBoardState extends State<PuzzleBoard>
 
   void _tap(ArrowPiece arrow) {
     final game = widget.game;
-    if (game.isGameOver || game.isComplete) return;
+    if (widget.paused || game.isGameOver || game.isComplete) return;
     final canExit = game.canExit(arrow);
     widget.onArrow(arrow.id);
     _wake();
@@ -230,8 +265,9 @@ class _PuzzleBoardState extends State<PuzzleBoard>
     }
     final cells = ahead + arrow.cells.length + 1;
     if (!_flightClock.isActive) {
-      _flightTime.value = Duration.zero;
-      _flightClock.start();
+      if (_flights.isEmpty) _flightTime.value = Duration.zero;
+      _lastFlight = Duration.zero;
+      if (!widget.paused) _flightClock.start();
     }
     _flights.add(
       _Flight(
@@ -259,9 +295,10 @@ class _PuzzleBoardState extends State<PuzzleBoard>
   }
 
   void _onFlight(Duration elapsed) {
-    _flightTime.value = elapsed;
+    _flightTime.value += elapsed - _lastFlight;
+    _lastFlight = elapsed;
     final landed = _flights
-        .where((f) => elapsed - f.start >= f.duration)
+        .where((f) => _flightTime.value - f.start >= f.duration)
         .toList();
     if (landed.isEmpty) return;
     _flights.removeWhere(landed.contains);
@@ -278,7 +315,8 @@ class _PuzzleBoardState extends State<PuzzleBoard>
   }
 
   void _rescue(RescueTarget target) {
-    if (_animation.isAnimating ||
+    if (widget.paused ||
+        _animation.isAnimating ||
         widget.game.isGameOver ||
         widget.game.isComplete ||
         widget.onRescue == null) {
@@ -306,116 +344,119 @@ class _PuzzleBoardState extends State<PuzzleBoard>
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final side = constraints.maxWidth;
-        final cell = side / (widget.game.level.size + 1);
-        final margin = cell;
-        Offset point(Cell c) =>
-            Offset(margin + c.x * cell, margin + c.y * cell);
-        // Fingers are wider than the small cells of large pictures.
-        final reach = max(cell * .6, 18 / _scale);
-        final board = GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapUp: (details) {
-            // Whatever is closest to the finger wins, so taps on arrows
-            // beside an animal never land on the animal by mistake.
-            ArrowPiece? nearest;
-            var distance = reach;
-            for (final arrow in widget.game.remaining) {
-              for (final c in arrow.cells) {
-                final d = (point(c) - details.localPosition).distance;
-                if (d < distance) {
-                  nearest = arrow;
-                  distance = d;
+    return IgnorePointer(
+      ignoring: widget.paused,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final side = constraints.maxWidth;
+          final cell = side / (widget.game.level.size + 1);
+          final margin = cell;
+          Offset point(Cell c) =>
+              Offset(margin + c.x * cell, margin + c.y * cell);
+          // Fingers are wider than the small cells of large pictures.
+          final reach = max(cell * .6, 18 / _scale);
+          final board = GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) {
+              // Whatever is closest to the finger wins, so taps on arrows
+              // beside an animal never land on the animal by mistake.
+              ArrowPiece? nearest;
+              var distance = reach;
+              for (final arrow in widget.game.remaining) {
+                for (final c in arrow.cells) {
+                  final d = (point(c) - details.localPosition).distance;
+                  if (d < distance) {
+                    nearest = arrow;
+                    distance = d;
+                  }
                 }
               }
-            }
-            for (final target in widget.game.waitingAnimals) {
-              final d = (point(target.cell) - details.localPosition).distance;
-              if (d < max(distance, cell * .44)) {
-                _rescue(target);
-                return;
+              for (final target in widget.game.waitingAnimals) {
+                final d = (point(target.cell) - details.localPosition).distance;
+                if (d < max(distance, cell * .44)) {
+                  _rescue(target);
+                  return;
+                }
               }
-            }
-            if (nearest != null) _tap(nearest);
-          },
-          // The picture and arrows repaint only when they change; the
-          // animals sit on their own layer and animate every frame. The
-          // accessibility nodes are built once per change, not per frame.
-          child: ClipRect(
-            child: SizedBox(
-              width: side,
-              height: cell * (widget.game.level.rows + 1),
-              child: Stack(
-                children: [
-                  for (final layer in [
-                    _Layer.board,
-                    _Layer.motion,
-                    if (widget.game.isRescue) _Layer.animals,
-                  ])
-                    Positioned.fill(
-                      child: RepaintBoundary(
-                        child: CustomPaint(
-                          painter: _BoardPainter(
-                            game: widget.game,
-                            layer: layer,
-                            flights: _flights,
-                            flightTime: _flightTime,
-                            blocked: _blocked,
-                            shake: _shake,
-                            escaping: _escaping,
-                            blockedAnimal: _blockedAnimal,
-                            motion: _animation,
-                            idle: _ambient,
-                            lunge: _hunt,
-                            progress: _shown,
-                            roaring: _roaring,
-                            pounced: _pounced,
+              if (nearest != null) _tap(nearest);
+            },
+            // The picture and arrows repaint only when they change; the
+            // animals sit on their own layer and animate every frame. The
+            // accessibility nodes are built once per change, not per frame.
+            child: ClipRect(
+              child: SizedBox(
+                width: side,
+                height: cell * (widget.game.level.rows + 1),
+                child: Stack(
+                  children: [
+                    for (final layer in [
+                      _Layer.board,
+                      _Layer.motion,
+                      if (widget.game.isRescue) _Layer.animals,
+                    ])
+                      Positioned.fill(
+                        child: RepaintBoundary(
+                          child: CustomPaint(
+                            painter: _BoardPainter(
+                              game: widget.game,
+                              layer: layer,
+                              flights: _flights,
+                              flightTime: _flightTime,
+                              blocked: _blocked,
+                              shake: _shake,
+                              escaping: _escaping,
+                              blockedAnimal: _blockedAnimal,
+                              motion: _animation,
+                              idle: _ambient,
+                              lunge: _hunt,
+                              progress: _shown,
+                              roaring: _roaring,
+                              pounced: _pounced,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  for (final target in widget.game.waitingAnimals)
-                    Positioned(
-                      left: point(target.cell).dx - cell / 2,
-                      top: point(target.cell).dy - cell / 2,
-                      width: cell,
-                      height: cell,
-                      child: Semantics(
-                        label:
-                            'Rescue ${widget.game.level.rescue!.preySingular}, escape ${target.exit.label}',
-                        button: true,
-                        onTap: () => _rescue(target),
-                        child: const SizedBox.expand(),
+                    for (final target in widget.game.waitingAnimals)
+                      Positioned(
+                        left: point(target.cell).dx - cell / 2,
+                        top: point(target.cell).dy - cell / 2,
+                        width: cell,
+                        height: cell,
+                        child: Semantics(
+                          label:
+                              'Rescue ${widget.game.level.rescue!.preySingular}, escape ${target.exit.label}',
+                          button: true,
+                          onTap: () => _rescue(target),
+                          child: const SizedBox.expand(),
+                        ),
                       ),
-                    ),
-                  for (final arrow in widget.game.remaining)
-                    Positioned(
-                      left: point(arrow.head).dx - cell / 2,
-                      top: point(arrow.head).dy - cell / 2,
-                      width: cell,
-                      height: cell,
-                      child: Semantics(
-                        label:
-                            'Arrow ${arrow.id + 1}, pointing ${arrow.direction.label}',
-                        button: true,
-                        onTap: () => _tap(arrow),
-                        child: const SizedBox.expand(),
+                    for (final arrow in widget.game.remaining)
+                      Positioned(
+                        left: point(arrow.head).dx - cell / 2,
+                        top: point(arrow.head).dy - cell / 2,
+                        width: cell,
+                        height: cell,
+                        child: Semantics(
+                          label:
+                              'Arrow ${arrow.id + 1}, pointing ${arrow.direction.label}',
+                          button: true,
+                          onTap: () => _tap(arrow),
+                          child: const SizedBox.expand(),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-        return InteractiveViewer(
-          transformationController: _zoom,
-          maxScale: 3,
-          panEnabled: _scale > 1.01,
-          child: RepaintBoundary(child: board),
-        );
-      },
+          );
+          return InteractiveViewer(
+            transformationController: _zoom,
+            maxScale: 3,
+            panEnabled: _scale > 1.01,
+            child: RepaintBoundary(child: board),
+          );
+        },
+      ),
     );
   }
 }

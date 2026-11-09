@@ -10,9 +10,13 @@ class GameSounds {
 
   static AudioPlayer? _player;
 
-  /// A bright little jingle for clearing an Arrow Escape level.
+  /// The player's choice from the pause menu, kept between launches.
+  static bool enabled = true;
+
+  /// A bright little jingle for clearing an Arrow Escape or Maze Escape
+  /// level.
   static Future<void> levelClear() async {
-    if (!GameSettings.sounds) return;
+    if (!GameSettings.sounds || !enabled) return;
     try {
       final player = _player ??= await _newPlayer();
       await player.stop();

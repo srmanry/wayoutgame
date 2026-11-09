@@ -4,6 +4,47 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('pausing an arrow flight preserves its pending animal rescue', (
+    tester,
+  ) async {
+    final game = PuzzleGame(mode: GameMode.rescue);
+    addTearDown(game.dispose);
+    while (game.remaining.length > 1) {
+      game.tap(game.remaining.firstWhere(game.canExit).id);
+    }
+    Future<void> showBoard(bool paused) => tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 340,
+            child: PuzzleBoard(
+              game: game,
+              paused: paused,
+              onArrow: game.tap,
+              onRescue: game.rescueAnimal,
+            ),
+          ),
+        ),
+      ),
+    );
+    await showBoard(false);
+    final board = find.byType(PuzzleBoard);
+    final arrow = game.remaining.single;
+    final cell = tester.getSize(board).width / (game.level.size + 1);
+    await tester.tapAt(
+      tester.getTopLeft(board) +
+          Offset(cell * (arrow.head.x + 1), cell * (arrow.head.y + 1)),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    await showBoard(true);
+    await tester.pumpAndSettle();
+    expect(game.rescued, isEmpty);
+    await showBoard(false);
+    await tester.pumpAndSettle();
+    expect(game.isComplete, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('arrows can be tapped while others are still flying', (
     tester,
   ) async {

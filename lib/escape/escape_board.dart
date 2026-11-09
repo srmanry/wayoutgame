@@ -12,7 +12,6 @@ import '../widgets/puzzle_board.dart' show ink, mint;
 import 'maze_escape.dart';
 import 'maze_camera.dart';
 import 'maze_decor.dart';
-import 'maze_gate.dart';
 import 'maze_image_scenery.dart';
 import 'maze_palette.dart';
 import 'maze_scene_cache.dart';
@@ -42,8 +41,8 @@ class EscapeBoard extends StatefulWidget {
   final VoidCallback? onEscaped;
   final VoidCallback? onCaught;
 
-  // Margins round the maze, in rooms: room on the left for the snake's
-  // burrow and on the right for the way out.
+  // Margins round the maze, in rooms: room on the left for the snake to
+  // slide in and on the right for the way out.
   static const sideMargin = .62, endMargin = .35;
 
   /// Width over height of the board for [maze].
@@ -331,20 +330,6 @@ class _EscapePainter extends CustomPainter {
     _drawHint(canvas, at(game.runnerAt), Size(cellWidth, cellHeight));
 
     final t = after();
-    // The exit gate breathes a green ring so the way out is easy to find.
-    if (!game.isOver) {
-      final (_, exitGate, room) = _gates(size);
-      final pulse = .5 + .5 * math.sin(game.clock * 3);
-      canvas.drawCircle(
-        exitGate + Offset(0, -room.height * .18),
-        room.width * (.62 + .16 * pulse),
-        Paint()
-          ..color = _exitGreen.withValues(alpha: .75 - .45 * pulse)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = math.max(1.5, room.width * .07),
-      );
-    }
-
     // Characters share the maze's room scale. The camera enlarges both
     // together, preserving their relationship to paths and walls.
     final portraitRadius = cell * .46;
@@ -362,13 +347,7 @@ class _EscapePainter extends CustomPainter {
     void drawHunter() {
       // The snake always comes whole, its long body winding along the path.
       if (maze.hunter == AnimalKind.snake) {
-        _drawSnake(
-          canvas,
-          cell,
-          at,
-          game.clock + t,
-          burrow: maze.number == 115 ? _gates(size).$1 : null,
-        );
+        _drawSnake(canvas, cell, at, game.clock + t, zoom: camera.scale);
         return;
       }
       if (CharacterArt.drawFace(
@@ -477,6 +456,22 @@ class _EscapePainter extends CustomPainter {
     }
     if (hunterCenter.dy > playerCenter.dy) drawHunter();
     canvas.restore();
+    // Chevrons light up one after another just outside the way out, drawn
+    // past the board's clip so they sit beyond the wall.
+    if (!game.isOver) {
+      final wall = Offset(
+        origin.dx + (maze.exit.x + 1) * cellWidth,
+        origin.dy + (maze.exit.y + .5) * cellHeight,
+      );
+      _drawExitArrow(
+        canvas,
+        (wall - camera.origin) * camera.scale,
+        math.max(cellWidth, 1) * camera.scale,
+        game.clock,
+        // Past the board's own edge the chevrons look cramped.
+        size.width,
+      );
+    }
     if (!overview && camera.scale > 1.05) {
       _drawMiniMap(canvas, size, camera, at);
     }
@@ -543,34 +538,6 @@ class _EscapePainter extends CustomPainter {
       Paint()..color = Colors.black.withValues(alpha: .25),
     );
     canvas.drawCircle(c, r * 1.2, Paint()..color = colour);
-  }
-
-  // Where the two gates stand, and how big they are drawn. In a dense maze
-  // they grow past a room and are kept inside the board.
-  (Offset, Offset, Size) _gates(Size size) {
-    final maze = game.maze;
-    final cellWidth = size.width / (maze.width + 2 * EscapeBoard.sideMargin);
-    final cellHeight = math.min(
-      cellWidth,
-      size.height / (maze.rows + 2 * EscapeBoard.endMargin),
-    );
-    final origin = Offset(
-      (size.width - maze.width * cellWidth) / 2,
-      (size.height - maze.rows * cellHeight) / 2,
-    );
-    Offset at(double x, double y) =>
-        origin + Offset((x + .5) * cellWidth, (y + .5) * cellHeight);
-    final room = Size(math.max(cellWidth, 18), math.max(cellHeight, 18));
-    final edge = room.width * .48;
-    final hunter = at(maze.snake.x - .62, maze.snake.y.toDouble());
-    final exit =
-        at(maze.exit.x.toDouble(), maze.exit.y.toDouble()) +
-        Offset(cellWidth * .7, 0);
-    return (
-      Offset(math.max(edge, hunter.dx), hunter.dy),
-      Offset(math.min(size.width - edge, exit.dx), exit.dy),
-      room,
-    );
   }
 
   void _paintScenery(Canvas canvas, Size size) {
@@ -703,29 +670,53 @@ class _EscapePainter extends CustomPainter {
 
     if (sceneryFilter != null) canvas.restore();
 
-    // Gateways sit above scenery so grass and buildings cannot cover them.
-    final (hunterGate, exitGate, gateRoom) = _gates(size);
-    // Level 115 tries the snake coming out of a burrow in the ground.
-    if (maze.number == 115) {
-      drawSnakeBurrow(canvas, hunterGate, gateRoom);
-    } else {
-      drawMazeGate(
-        canvas,
-        hunterGate,
-        gateRoom,
-        exit: false,
-        level: maze.number,
-        palette: palette,
+    // The maze has no gateways: chevrons mark the way out instead.
+  }
+
+  // Three rounded chevrons pointing out through the exit. They light up one
+  // after another, so the way out seems to flow off the board. They keep a
+  // readable size however small the rooms are, and never crowd a roomy maze.
+  void _drawExitArrow(
+    Canvas canvas,
+    Offset at,
+    double room,
+    double clock,
+    double limit,
+  ) {
+    final size = room.clamp(30.0, 40.0);
+    final h = size * .42, w = size * .24, gap = size * .32;
+    final stroke = size * .13;
+    // The first chevron sits right in the gap in the wall and the rest lead
+    // out from it: three where they fit on the board, two where there is
+    // less room.
+    Paint line(Color color, double width) => Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    double end(int count) => at.dx + (count - 1) * gap + w / 2 + stroke;
+    final count = end(3) <= limit ? 3 : 2;
+    // Pulled back only as far as needed to stay on the board.
+    final start = at.dx - math.max(0.0, end(count) - limit);
+    for (var i = 0; i < count; i++) {
+      // A wave of light travels from the first chevron to the last.
+      final glow = .5 + .5 * math.cos((clock * 2.4 - i * .55) * math.pi);
+      final x = start + i * gap;
+      final chevron = Path()
+        ..moveTo(x - w / 2, at.dy - h / 2)
+        ..lineTo(x + w / 2, at.dy)
+        ..lineTo(x - w / 2, at.dy + h / 2);
+      canvas.drawPath(
+        chevron.shift(Offset(0, size * .05)),
+        line(Colors.black.withValues(alpha: .2), stroke * 2),
+      );
+      canvas.drawPath(chevron, line(Colors.white, stroke * 2));
+      canvas.drawPath(
+        chevron,
+        line(Color.lerp(const Color(0xFF8FD3B4), _exitGreen, glow)!, stroke),
       );
     }
-    drawMazeGate(
-      canvas,
-      exitGate,
-      gateRoom,
-      exit: true,
-      level: maze.number,
-      palette: palette,
-    );
   }
 
   // A chevron from the runner toward the right way.
@@ -769,11 +760,15 @@ class _EscapePainter extends CustomPainter {
     double cell,
     Offset Function(Offset) at,
     double wave, {
-    Offset? burrow,
+    double zoom = 1,
   }) {
-    const bodyRooms = 4.0, coilArm = .2 * 2 * math.pi;
-    // In a dense maze the body keeps a size that still reads as a snake.
-    final girth = math.max(cell, 26.0);
+    // About 140 pixels long on screen on every level, however big the rooms
+    // are or however close the camera comes.
+    final bodyRooms = 140 / (cell * zoom);
+    const coilArm = .2 * 2 * math.pi;
+    // Slim in roomy mazes; in a dense maze the body keeps a size that still
+    // reads as a snake.
+    final girth = math.max(cell * .72, 26.0);
     final points = [...game.trail, game.snakeAt];
     // A gate on the board's edge must not cut the coil or the tail off.
     Offset onBoard(Offset p) {
@@ -790,21 +785,7 @@ class _EscapePainter extends CustomPainter {
     // Whatever has not left yet stays coiled round the end of the trail.
     final path = Path();
     final turns = math.min(2.0, math.max(0.0, bodyRooms - length) / coilArm);
-    if (burrow != null && length < bodyRooms) {
-      // Out of a burrow: until the whole body is out the tail stays down the
-      // hole, and a snake still waiting only peeks its head out. Once out,
-      // it lets go of the hole and follows its trail like any other.
-      path.moveTo(burrow.dx, burrow.dy);
-      if (length == 0) {
-        final peek = burrow + Offset(girth * .42, 0);
-        path.lineTo(peek.dx, peek.dy);
-        spine.last = peek;
-      } else {
-        for (final p in spine) {
-          path.lineTo(p.dx, p.dy);
-        }
-      }
-    } else if (turns > .05) {
+    if (turns > .05) {
       final centre = spine.first;
       final steps = (turns * 16).ceil();
       for (var i = 0; i <= steps; i++) {
